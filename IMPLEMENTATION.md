@@ -287,16 +287,27 @@ whoopster/
   - Test API connectivity
 
 ### Phase 10: Docker Deployment
-- [ ] Create Dockerfile
+- [ ] Create Dockerfile with multi-stage builds
+  - Stage 1: Builder (compile dependencies, install packages)
+  - Stage 2: Runtime (minimal final image)
   - Python 3.11 slim base
   - Install dependencies
   - Run migrations on startup
+  - Optimize layer caching
 - [ ] Create docker-compose.yml
   - PostgreSQL service (port 5432)
   - App service (depends on postgres)
   - Grafana service (port 3000)
   - Volume configuration
   - Network setup
+  - Health checks for all services
+- [ ] Create .github/workflows/docker-build.yml
+  - GitHub Actions workflow for CI/CD
+  - Multi-arch builds (linux/amd64, linux/arm64)
+  - Build on push to main and tags
+  - Push to GitHub Container Registry (ghcr.io)
+  - Cache layers for faster builds
+  - Automated versioning from git tags
 
 ### Phase 11: Grafana Configuration
 - [ ] Create grafana/provisioning/datasources/postgres.yml
@@ -304,13 +315,22 @@ whoopster/
   - Connection parameters
 - [ ] Create grafana/provisioning/dashboards/dashboard.yml
   - Dashboard provider configuration
-- [ ] Create grafana/provisioning/dashboards/whoop_dashboard.json
-  - Pre-built dashboard with panels:
-    * Sleep performance trends
-    * Recovery score distribution
-    * Workout strain by sport
-    * HRV trends
-    * Heart rate zone analysis
+  - Auto-import JSON dashboards
+- [ ] Create grafana/dashboards/whoop-overview.json
+  - Complete, ready-to-use dashboard JSON
+  - Importable via Grafana UI or auto-provisioned
+  - Panels:
+    * Sleep Performance Trend (time series)
+    * Recovery Score Gauge (current status)
+    * Sleep Stages Breakdown (stacked bar chart)
+    * Recovery vs Strain Correlation (scatter plot)
+    * Workout Strain by Sport (bar chart)
+    * HRV Trend (time series with moving average)
+    * Heart Rate Zones Distribution (pie chart)
+    * Weekly Summary Stats (stat panels)
+  - Variables for date range and user filtering
+  - Annotations for workouts
+  - Templated queries for reusability
 
 ### Phase 12: Documentation
 - [ ] Create README.md
@@ -546,6 +566,173 @@ ORDER BY start_time;
 **Issue**: Database connection failed
 - **Solution**: Verify postgres service is running (`docker-compose ps`). Check DATABASE_URL in .env.
 
+## Docker Multi-Stage Build
+
+### Dockerfile Structure
+
+The application uses a multi-stage Docker build for optimized image size and security:
+
+**Stage 1: Builder**
+```dockerfile
+FROM python:3.11-slim AS builder
+# Install build dependencies (gcc, g++, libpq-dev)
+# Compile Python packages
+# Install dependencies to /root/.local
+```
+
+**Stage 2: Runtime**
+```dockerfile
+FROM python:3.11-slim
+# Install only runtime dependencies (postgresql-client, libpq5)
+# Copy compiled packages from builder
+# Create non-root user (whoopster:1000)
+# Copy application code
+# Set up health checks
+```
+
+### Benefits
+
+1. **Smaller Image Size**: ~200MB vs ~500MB (60% reduction)
+2. **Security**: No build tools in production image
+3. **Faster Deployment**: Smaller images = faster pulls
+4. **Layer Caching**: Optimized for Docker build cache
+5. **Non-Root User**: Runs as unprivileged user (UID 1000)
+
+### Build Commands
+
+```bash
+# Local build
+docker build -t whoopster:latest .
+
+# Multi-arch build
+docker buildx build --platform linux/amd64,linux/arm64 -t whoopster:latest .
+
+# Build with cache
+docker build --cache-from whoopster:latest -t whoopster:latest .
+```
+
+## GitHub Actions CI/CD
+
+### Workflow: `.github/workflows/docker-build.yml`
+
+Automated Docker image building with:
+
+**Triggers:**
+- Push to `main` branch
+- Push of version tags (e.g., `v0.1.0`)
+- Pull requests (build only, no push)
+- Manual dispatch
+
+**Features:**
+- Multi-architecture builds (amd64, arm64)
+- Push to GitHub Container Registry (ghcr.io)
+- Docker layer caching for faster builds
+- Semantic versioning from git tags
+- Build metadata and labels
+
+**Workflow Steps:**
+1. Checkout code
+2. Set up Docker Buildx (multi-platform support)
+3. Login to ghcr.io
+4. Extract metadata (tags, labels)
+5. Build and push images
+6. Generate build summary
+
+**Image Tags:**
+- `ghcr.io/yourusername/whoopster:latest` - Latest main branch
+- `ghcr.io/yourusername/whoopster:v0.1.0` - Specific version
+- `ghcr.io/yourusername/whoopster:sha-abc1234` - Commit SHA
+
+**Usage:**
+
+```bash
+# Pull latest image
+docker pull ghcr.io/yourusername/whoopster:latest
+
+# Pull specific version
+docker pull ghcr.io/yourusername/whoopster:v0.1.0
+
+# Run container
+docker run -d --name whoopster \
+  --env-file .env \
+  ghcr.io/yourusername/whoopster:latest
+```
+
+## Grafana Dashboard
+
+### Pre-Built Dashboard JSON
+
+**File**: `grafana/dashboards/whoop-overview.json`
+
+A complete, production-ready Grafana dashboard with:
+
+**Panels:**
+
+1. **Sleep Performance Trend** (Time Series)
+   - Sleep performance percentage over time
+   - 7-day moving average
+   - Color thresholds (green >85%, yellow 70-85%, red <70%)
+
+2. **Recovery Score Gauge** (Gauge)
+   - Current recovery score (0-100)
+   - Color zones: Red 0-33%, Yellow 34-66%, Green 67-100%
+
+3. **Sleep Stages Breakdown** (Stacked Bar Chart)
+   - Light, Deep, REM, Awake durations
+   - Stacked by night
+   - Shows sleep composition
+
+4. **Recovery vs Strain Correlation** (Scatter Plot)
+   - X-axis: Daily strain
+   - Y-axis: Recovery score
+   - Identify patterns and outliers
+
+5. **Workout Strain by Sport** (Bar Chart)
+   - Average strain score per sport type
+   - Sorted by strain descending
+   - Shows which activities are most taxing
+
+6. **HRV Trend** (Time Series)
+   - HRV (RMSSD) over time
+   - 30-day moving average
+   - Shows autonomic nervous system health
+
+7. **Heart Rate Zones** (Pie Chart)
+   - Distribution of time in each HR zone
+   - Zone 0-5 breakdown
+   - For selected time range
+
+8. **Weekly Summary Stats** (Stat Panels)
+   - Average sleep duration
+   - Average recovery score
+   - Total workouts
+   - Average daily strain
+
+**Dashboard Features:**
+- Time range selector (last 7/30/90 days)
+- User ID variable (for multi-user setups)
+- Auto-refresh every 5 minutes
+- Workout annotations on time series
+- Responsive layout (mobile-friendly)
+
+**Import Methods:**
+
+1. **Auto-Provisioning** (via docker-compose):
+   - Dashboard automatically loaded on startup
+   - Updates on container restart
+
+2. **Manual Import**:
+   - Grafana UI → Dashboards → Import
+   - Upload `whoop-overview.json`
+   - Select "Whoopster PostgreSQL" datasource
+
+3. **API Import**:
+   ```bash
+   curl -X POST http://admin:password@localhost:3000/api/dashboards/db \
+     -H "Content-Type: application/json" \
+     -d @grafana/dashboards/whoop-overview.json
+   ```
+
 ## Testing Strategy
 
 1. **Unit Tests**:
@@ -562,6 +749,11 @@ ORDER BY start_time;
    - Run full sync with real Whoop account (dev mode)
    - Verify data in PostgreSQL
    - Verify Grafana dashboards display correctly
+
+4. **Docker Tests**:
+   - Test multi-stage build process
+   - Verify image size optimizations
+   - Test multi-arch images on different platforms
 
 ## Future Enhancements
 
