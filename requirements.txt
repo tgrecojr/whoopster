@@ -7,7 +7,7 @@ alembic==1.13.0
 
 # HTTP client
 httpx==0.25.2
-authlib==1.3.0
+authlib==1.6.5
 
 # Scheduling
 apscheduler==3.10.4
