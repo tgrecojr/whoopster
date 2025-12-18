@@ -115,6 +115,23 @@ This starts:
 - **Whoopster app** (data sync service)
 - **Grafana** on `http://localhost:3000`
 
+**Alternative: Use Pre-Built Images**
+
+Instead of building locally, you can pull pre-built multi-arch images:
+
+```bash
+# Pull from GitHub Container Registry
+docker pull ghcr.io/yourusername/whoopster:latest
+
+# Update docker-compose.yml to use ghcr.io image
+# Then start services
+docker-compose up -d
+```
+
+Pre-built images are available for:
+- `linux/amd64` (Intel/AMD)
+- `linux/arm64` (Apple Silicon, Raspberry Pi)
+
 ### 5. Authorize Whoop Access
 
 ```bash
@@ -131,6 +148,18 @@ This will:
 1. Open [http://localhost:3000](http://localhost:3000)
 2. Login with username `admin` and your `GRAFANA_ADMIN_PASSWORD`
 3. Navigate to "Whoop Analytics" dashboard folder
+4. The **Whoop Overview** dashboard is automatically loaded with:
+   - Sleep performance trends
+   - Recovery score gauge
+   - Sleep stages breakdown
+   - Workout strain analytics
+   - HRV trends
+   - Heart rate zone distribution
+
+**Manual Dashboard Import** (if needed):
+- Go to Dashboards → Import
+- Upload `grafana/dashboards/whoop-overview.json`
+- Select "Whoopster PostgreSQL" datasource
 
 ## Project Structure
 
