@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from src.auth.token_manager import TokenManager
 from src.auth.oauth_client import WhoopOAuthClient
+from src.auth.encryption import get_token_encryption
 from src.models.db_models import OAuthToken
 
 
@@ -42,6 +43,7 @@ class TestTokenManagerAsync:
     async def test_save_token_new(self, db_session, test_user):
         """Test saving a new token."""
         manager = TokenManager()
+        encryption = get_token_encryption()
 
         token = await manager.save_token(
             user_id=test_user.id,
@@ -54,8 +56,12 @@ class TestTokenManagerAsync:
         )
 
         assert token.user_id == test_user.id
-        assert token.access_token == "test_access"
-        assert token.refresh_token == "test_refresh"
+        # Tokens should be encrypted in database (not plaintext)
+        assert token.access_token != "test_access"
+        assert token.refresh_token != "test_refresh"
+        # Verify tokens can be decrypted correctly
+        assert encryption.decrypt(token.access_token) == "test_access"
+        assert encryption.decrypt(token.refresh_token) == "test_refresh"
         assert token.token_type == "Bearer"
         assert token.scopes == ["read:sleep"]
         assert token.expires_at > datetime.now(timezone.utc)
@@ -63,6 +69,7 @@ class TestTokenManagerAsync:
     async def test_save_token_update_existing(self, db_session, test_user, test_oauth_token):
         """Test updating an existing token."""
         manager = TokenManager()
+        encryption = get_token_encryption()
 
         original_token_id = test_oauth_token.id
 
@@ -75,8 +82,12 @@ class TestTokenManagerAsync:
         )
 
         assert updated_token.id == original_token_id  # Same token, updated
-        assert updated_token.access_token == "new_access"
-        assert updated_token.refresh_token == "new_refresh"
+        # Tokens should be encrypted in database
+        assert updated_token.access_token != "new_access"
+        assert updated_token.refresh_token != "new_refresh"
+        # Verify tokens can be decrypted correctly
+        assert encryption.decrypt(updated_token.access_token) == "new_access"
+        assert encryption.decrypt(updated_token.refresh_token) == "new_refresh"
 
     async def test_get_valid_token_not_expired(self, db_session, test_user, test_oauth_token):
         """Test getting a valid token that hasn't expired."""
@@ -84,7 +95,8 @@ class TestTokenManagerAsync:
 
         token = await manager.get_valid_token(test_user.id, db=db_session)
 
-        assert token == test_oauth_token.access_token
+        # get_valid_token should return the decrypted token
+        assert token == test_oauth_token._plaintext_access_token
 
     async def test_get_valid_token_no_token(self, db_session, test_user):
         """Test getting token when none exists."""
@@ -97,12 +109,13 @@ class TestTokenManagerAsync:
     async def test_get_valid_token_near_expiry(self, db_session, test_user):
         """Test token refresh when near expiry."""
         manager = TokenManager()
+        encryption = get_token_encryption()
 
         # Create token expiring in 2 minutes (within threshold)
         near_expiry_token = OAuthToken(
             user_id=test_user.id,
-            access_token="old_access",
-            refresh_token="old_refresh",
+            access_token=encryption.encrypt("old_access"),
+            refresh_token=encryption.encrypt("old_refresh"),
             token_type="Bearer",
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=2),
             scopes=["read:sleep"],
@@ -128,9 +141,9 @@ class TestTokenManagerAsync:
             # Should have refreshed the token
             assert token == "new_access"
 
-            # Check database was updated
+            # Check database was updated with encrypted token
             db_session.refresh(near_expiry_token)
-            assert near_expiry_token.access_token == "new_access"
+            assert encryption.decrypt(near_expiry_token.access_token) == "new_access"
 
     async def test_is_token_valid_true(self, db_session, test_user, test_oauth_token):
         """Test checking if token is valid."""
@@ -203,12 +216,13 @@ class TestTokenManagerAsync:
     async def test_get_token_info_needs_refresh(self, db_session, test_user):
         """Test token info shows needs refresh."""
         manager = TokenManager()
+        encryption = get_token_encryption()
 
         # Create token expiring in 2 minutes (within threshold)
         near_expiry_token = OAuthToken(
             user_id=test_user.id,
-            access_token="access",
-            refresh_token="refresh",
+            access_token=encryption.encrypt("access"),
+            refresh_token=encryption.encrypt("refresh"),
             token_type="Bearer",
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=2),
             scopes=["read:sleep"],

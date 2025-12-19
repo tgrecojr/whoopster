@@ -82,7 +82,9 @@ def init_db() -> None:
     It doesn't create tables (Alembic does that), but can be used for
     any additional initialization logic.
     """
-    logger.info("Database initialized", database_url=settings.database_url)
+    # Log safe connection info without credentials
+    safe_host = f"{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
+    logger.info("Database initialized", host=safe_host)
 
 
 def check_connection() -> bool:
