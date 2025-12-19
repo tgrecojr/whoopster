@@ -405,6 +405,8 @@ This ensures database schema is always up-to-date before app starts.
 POSTGRES_DB=whoopster
 POSTGRES_USER=whoopster
 POSTGRES_PASSWORD=<secure_password>
+POSTGRES_HOST=postgres              # Docker service name, or external host for production
+POSTGRES_PORT=5432                  # Default PostgreSQL port
 
 # Whoop API (from developer.whoop.com)
 WHOOP_CLIENT_ID=<your_client_id>

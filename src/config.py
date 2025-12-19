@@ -1,5 +1,6 @@
 """Application configuration using Pydantic Settings."""
 
+from urllib.parse import quote_plus
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,9 +16,17 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        """Construct PostgreSQL connection URL."""
+        """
+        Construct PostgreSQL connection URL with URL-encoded credentials.
+
+        This ensures special characters in passwords are properly encoded.
+        """
+        # URL-encode username and password to handle special characters
+        encoded_user = quote_plus(self.postgres_user)
+        encoded_password = quote_plus(self.postgres_password)
+
         return (
-            f"postgresql://{self.postgres_user}:{self.postgres_password}"
+            f"postgresql://{encoded_user}:{encoded_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 

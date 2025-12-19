@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Whoopster PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: whoopster
+    user: whoopster
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500  # PostgreSQL 15.x
+      timescaledb: false
+    editable: true
+    isDefault: true

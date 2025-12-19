@@ -1,8 +1,9 @@
 """SQLAlchemy database models for Whoopster application."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Any
 import uuid
+import json
 
 from sqlalchemy import (
     Column,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     Text,
     ARRAY,
     ForeignKey,
+    TypeDecorator,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.declarative import declarative_base
@@ -21,6 +23,70 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 Base = declarative_base()
+
+
+class StringArray(TypeDecorator):
+    """Array type that works with both PostgreSQL and SQLite.
+
+    Uses ARRAY in PostgreSQL and JSON in SQLite/other databases.
+    """
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(ARRAY(Text))
+        else:
+            return dialect.type_descriptor(Text)
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        else:
+            return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        else:
+            return json.loads(value)
+
+
+class JSONType(TypeDecorator):
+    """JSON type that works with both PostgreSQL and SQLite.
+
+    Uses JSONB in PostgreSQL and TEXT (with JSON) in SQLite/other databases.
+    """
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(JSONB)
+        else:
+            return dialect.type_descriptor(Text)
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        else:
+            return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        else:
+            if isinstance(value, str):
+                return json.loads(value)
+            return value
 
 
 class User(Base):
@@ -74,7 +140,7 @@ class OAuthToken(Base):
     refresh_token = Column(Text, nullable=False)
     token_type = Column(String(50), default="Bearer")
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
-    scopes = Column(ARRAY(Text))
+    scopes = Column(StringArray)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -120,7 +186,7 @@ class SleepRecord(Base):
     is_nap = Column(Boolean, default=False)
 
     # Raw data for future-proofing
-    raw_data = Column(JSONB)
+    raw_data = Column(JSONType)
 
     # Audit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -165,7 +231,7 @@ class RecoveryRecord(Base):
     calibrating = Column(Boolean, default=False)
 
     # Raw data
-    raw_data = Column(JSONB)
+    raw_data = Column(JSONType)
 
     # Audit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -226,7 +292,7 @@ class WorkoutRecord(Base):
     score_state = Column(String(50), index=True)  # SCORED, PENDING_SCORE, UNSCORABLE
 
     # Raw data
-    raw_data = Column(JSONB)
+    raw_data = Column(JSONType)
 
     # Audit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -270,7 +336,7 @@ class CycleRecord(Base):
     score_state = Column(String(50), index=True)  # SCORED, PENDING_SCORE, UNSCORABLE
 
     # Raw data
-    raw_data = Column(JSONB)
+    raw_data = Column(JSONType)
 
     # Audit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
