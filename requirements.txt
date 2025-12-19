@@ -11,7 +11,7 @@ authlib==1.6.5
 tenacity==8.2.3
 
 # Security
-cryptography==44.0.0
+cryptography==44.0.1
 
 # Scheduling
 apscheduler==3.10.4
