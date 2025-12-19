@@ -10,6 +10,9 @@ httpx==0.25.2
 authlib==1.6.5
 tenacity==8.2.3
 
+# Security
+cryptography==44.0.0
+
 # Scheduling
 apscheduler==3.10.4
 

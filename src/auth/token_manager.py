@@ -1,7 +1,7 @@
 """Token management for Whoop API OAuth tokens.
 
 This module handles storage, retrieval, and automatic refresh of OAuth tokens
-in the PostgreSQL database.
+in the PostgreSQL database with encryption at rest.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from src.models.db_models import User, OAuthToken
 from src.auth.oauth_client import WhoopOAuthClient
+from src.auth.encryption import get_token_encryption
 from src.database.session import get_db_context
 from src.utils.logging_config import get_logger
 
@@ -81,32 +82,39 @@ class TokenManager:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
         def _save_token_sync(session: Session) -> OAuthToken:
+            # Get encryption instance
+            encryption = get_token_encryption()
+
+            # Encrypt tokens before storage
+            encrypted_access_token = encryption.encrypt(access_token)
+            encrypted_refresh_token = encryption.encrypt(refresh_token)
+
             # Check if token already exists for user
             stmt = select(OAuthToken).where(OAuthToken.user_id == user_id)
             existing_token = session.execute(stmt).scalar_one_or_none()
 
             if existing_token:
-                # Update existing token
-                existing_token.access_token = access_token
-                existing_token.refresh_token = refresh_token
+                # Update existing token with encrypted values
+                existing_token.access_token = encrypted_access_token
+                existing_token.refresh_token = encrypted_refresh_token
                 existing_token.token_type = token_type
                 existing_token.expires_at = expires_at
                 existing_token.scopes = scopes
                 existing_token.updated_at = datetime.now(timezone.utc)
 
                 logger.info(
-                    "Updated existing token",
+                    "Updated existing token (encrypted)",
                     user_id=user_id,
                     expires_at=expires_at.isoformat(),
                 )
 
                 return existing_token
             else:
-                # Create new token
+                # Create new token with encrypted values
                 new_token = OAuthToken(
                     user_id=user_id,
-                    access_token=access_token,
-                    refresh_token=refresh_token,
+                    access_token=encrypted_access_token,
+                    refresh_token=encrypted_refresh_token,
                     token_type=token_type,
                     expires_at=expires_at,
                     scopes=scopes,
@@ -115,7 +123,7 @@ class TokenManager:
                 session.add(new_token)
 
                 logger.info(
-                    "Created new token",
+                    "Created new token (encrypted)",
                     user_id=user_id,
                     expires_at=expires_at.isoformat(),
                 )
@@ -151,6 +159,9 @@ class TokenManager:
         """
 
         def _get_token_sync(session: Session) -> Optional[str]:
+            # Get encryption instance
+            encryption = get_token_encryption()
+
             # Retrieve user's token from database
             stmt = select(OAuthToken).where(OAuthToken.user_id == user_id)
             token = session.execute(stmt).scalar_one_or_none()
@@ -158,6 +169,18 @@ class TokenManager:
             if not token:
                 logger.warning("No token found for user", user_id=user_id)
                 return None
+
+            # Decrypt tokens
+            try:
+                decrypted_access_token = encryption.decrypt(token.access_token)
+                decrypted_refresh_token = encryption.decrypt(token.refresh_token)
+            except Exception as e:
+                logger.error(
+                    "Failed to decrypt token",
+                    user_id=user_id,
+                    error=str(e),
+                )
+                raise
 
             # Check if token needs refresh
             now = datetime.now(timezone.utc)
@@ -187,7 +210,7 @@ class TokenManager:
                         with concurrent.futures.ThreadPoolExecutor() as executor:
                             future = executor.submit(
                                 asyncio.run,
-                                self.oauth_client.refresh_access_token(token.refresh_token)
+                                self.oauth_client.refresh_access_token(decrypted_refresh_token)
                             )
                             token_data = future.result()
                     except RuntimeError:
@@ -195,14 +218,18 @@ class TokenManager:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         token_data = loop.run_until_complete(
-                            self.oauth_client.refresh_access_token(token.refresh_token)
+                            self.oauth_client.refresh_access_token(decrypted_refresh_token)
                         )
 
-                    # Update token in database
-                    token.access_token = token_data["access_token"]
-                    token.refresh_token = token_data.get(
-                        "refresh_token", token.refresh_token
+                    # Encrypt new tokens before updating database
+                    encrypted_access_token = encryption.encrypt(token_data["access_token"])
+                    encrypted_refresh_token = encryption.encrypt(
+                        token_data.get("refresh_token", decrypted_refresh_token)
                     )
+
+                    # Update token in database with encrypted values
+                    token.access_token = encrypted_access_token
+                    token.refresh_token = encrypted_refresh_token
                     token.token_type = token_data.get("token_type", token.token_type)
                     token.expires_at = datetime.now(timezone.utc) + timedelta(
                         seconds=token_data["expires_in"]
@@ -212,10 +239,13 @@ class TokenManager:
                     session.commit()
 
                     logger.info(
-                        "Token refreshed successfully",
+                        "Token refreshed successfully (encrypted)",
                         user_id=user_id,
                         new_expires_at=token.expires_at.isoformat(),
                     )
+
+                    # Return the new decrypted access token
+                    return token_data["access_token"]
 
                 except Exception as e:
                     logger.error(
@@ -226,7 +256,8 @@ class TokenManager:
                     )
                     raise
 
-            return token.access_token
+            # Return decrypted access token
+            return decrypted_access_token
 
         # Use provided session or create new one
         if db:

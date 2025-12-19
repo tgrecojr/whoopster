@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     grafana_admin_user: str = "admin"
     grafana_admin_password: str
 
+    # Security Configuration
+    token_encryption_key: str  # Required: Fernet encryption key for OAuth tokens
+
     # Pydantic Settings Configuration
     model_config = SettingsConfigDict(
         env_file=".env",

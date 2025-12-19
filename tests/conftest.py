@@ -13,6 +13,7 @@ from faker import Faker
 
 from src.models.db_models import Base, User, OAuthToken, SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord
 from src.config import settings
+from src.auth.encryption import get_token_encryption
 
 # Initialize Faker
 fake = Faker()
@@ -90,14 +91,22 @@ def test_user(db_session: Session) -> User:
 @pytest.fixture
 def test_oauth_token(db_session: Session, test_user: User) -> OAuthToken:
     """Create a test OAuth token."""
+    encryption = get_token_encryption()
+    plaintext_access = fake.uuid4()
+    plaintext_refresh = fake.uuid4()
+
     token = OAuthToken(
         user_id=test_user.id,
-        access_token=fake.uuid4(),
-        refresh_token=fake.uuid4(),
+        access_token=encryption.encrypt(plaintext_access),
+        refresh_token=encryption.encrypt(plaintext_refresh),
         token_type="Bearer",
         expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
         scopes=["read:sleep", "read:workout", "read:recovery", "read:cycles"],
     )
+    # Store plaintext values as attributes for test assertions
+    token._plaintext_access_token = plaintext_access
+    token._plaintext_refresh_token = plaintext_refresh
+
     db_session.add(token)
     db_session.commit()
     db_session.refresh(token)
@@ -107,14 +116,22 @@ def test_oauth_token(db_session: Session, test_user: User) -> OAuthToken:
 @pytest.fixture
 def expired_oauth_token(db_session: Session, test_user: User) -> OAuthToken:
     """Create an expired OAuth token."""
+    encryption = get_token_encryption()
+    plaintext_access = fake.uuid4()
+    plaintext_refresh = fake.uuid4()
+
     token = OAuthToken(
         user_id=test_user.id,
-        access_token=fake.uuid4(),
-        refresh_token=fake.uuid4(),
+        access_token=encryption.encrypt(plaintext_access),
+        refresh_token=encryption.encrypt(plaintext_refresh),
         token_type="Bearer",
         expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
         scopes=["read:sleep", "read:workout", "read:recovery", "read:cycles"],
     )
+    # Store plaintext values as attributes for test assertions
+    token._plaintext_access_token = plaintext_access
+    token._plaintext_refresh_token = plaintext_refresh
+
     db_session.add(token)
     db_session.commit()
     db_session.refresh(token)
