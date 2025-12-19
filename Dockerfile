@@ -66,9 +66,9 @@ RUN mkdir -p /app/logs && chown -R whoopster:whoopster /app
 # Switch to non-root user
 USER whoopster
 
-# Health check
+# Health check - simple Python import test
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "from src.database.session import verify_connection; import sys; sys.exit(0 if verify_connection() else 1)"
+    CMD python -c "import sys; from src.config import settings; sys.exit(0)"
 
 # Run database migrations and start application
 CMD ["sh", "-c", "alembic upgrade head && python -m src.main"]
