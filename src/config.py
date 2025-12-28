@@ -12,15 +12,11 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).parent.parent
 ENV_FILE = PROJECT_ROOT / ".env"
 
-# Load .env file explicitly using python-dotenv
+# Load .env file explicitly using python-dotenv if it exists
 # This ensures the file is loaded regardless of current working directory
+# In Docker/production, environment variables can be passed directly without a .env file
 if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
-else:
-    raise FileNotFoundError(
-        f"Missing .env file at {ENV_FILE}. "
-        f"Please copy .env.example to .env and configure your settings."
-    )
 
 
 class Settings(BaseSettings):
@@ -130,8 +126,14 @@ def _initialize_settings() -> Settings:
                 error_lines.append(f"  - {item['field']}: {item['error']}")
 
         error_lines.extend([
-            f"\nPlease update your .env file at: {ENV_FILE}",
+            f"\nPlease set these environment variables in your .env file or Docker environment.",
+            f"For local development, create .env at: {ENV_FILE}",
             f"You can use .env.example as a template: {PROJECT_ROOT / '.env.example'}",
+            "",
+            "For Docker/production, pass these as environment variables via:",
+            "  - docker-compose.yml (environment section)",
+            "  - docker run -e VARIABLE=value",
+            "  - Kubernetes secrets/configmaps",
             "",
             "For TOKEN_ENCRYPTION_KEY, generate a new key with:",
             "  python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
