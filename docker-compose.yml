@@ -55,8 +55,6 @@ services:
       SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-15}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       MAX_REQUESTS_PER_MINUTE: ${MAX_REQUESTS_PER_MINUTE:-60}
-    volumes:
-      - app_logs:/app/logs
     networks:
       - whoopster-network
     healthcheck:
@@ -98,8 +96,6 @@ volumes:
   postgres_data:
     driver: local
   grafana_data:
-    driver: local
-  app_logs:
     driver: local
 
 networks:
