@@ -61,10 +61,6 @@ class Settings(BaseSettings):
     # Rate Limiting
     max_requests_per_minute: int = 60
 
-    # Grafana Configuration
-    grafana_admin_user: str = "admin"
-    grafana_admin_password: str
-
     # Security Configuration
     token_encryption_key: str  # Required: Fernet encryption key for OAuth tokens
 
