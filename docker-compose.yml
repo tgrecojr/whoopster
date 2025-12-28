@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: whoopster-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-whoopster}
+      POSTGRES_USER: ${POSTGRES_USER:-whoopster}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-whoopster} -d ${POSTGRES_DB:-whoopster}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - whoopster-network
+
+  # Whoopster Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whoopster-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # PostgreSQL Configuration
+      POSTGRES_DB: ${POSTGRES_DB:-whoopster}
+      POSTGRES_USER: ${POSTGRES_USER:-whoopster}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+
+      # Whoop API Configuration
+      WHOOP_CLIENT_ID: ${WHOOP_CLIENT_ID:?WHOOP_CLIENT_ID must be set}
+      WHOOP_CLIENT_SECRET: ${WHOOP_CLIENT_SECRET:?WHOOP_CLIENT_SECRET must be set}
+      WHOOP_REDIRECT_URI: ${WHOOP_REDIRECT_URI:-http://localhost:8000/callback}
+      WHOOP_API_BASE_URL: ${WHOOP_API_BASE_URL:-https://api.prod.whoop.com}
+      WHOOP_AUTH_URL: ${WHOOP_AUTH_URL:-https://api.prod.whoop.com/oauth/oauth2/auth}
+      WHOOP_TOKEN_URL: ${WHOOP_TOKEN_URL:-https://api.prod.whoop.com/oauth/oauth2/token}
+
+      # Application Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-15}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      MAX_REQUESTS_PER_MINUTE: ${MAX_REQUESTS_PER_MINUTE:-60}
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - whoopster-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'from src.database.session import verify_connection; import sys; sys.exit(0 if verify_connection() else 1)'"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: whoopster-grafana
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_INSTALL_PLUGINS: ""
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - whoopster-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  grafana_data:
+    driver: local
+  app_logs:
+    driver: local
+
+networks:
+  whoopster-network:
+    driver: bridge

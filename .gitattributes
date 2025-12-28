@@ -1,0 +1,33 @@
+# Auto detect text files and normalize line endings to LF
+* text=auto eol=lf
+
+# Python
+*.py text diff=python
+
+# SQL
+*.sql text
+
+# Markdown
+*.md text
+
+# YAML
+*.yml text
+*.yaml text
+
+# JSON
+*.json text
+
+# Shell scripts
+*.sh text eol=lf
+
+# Windows batch files
+*.bat text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db binary
+*.sqlite binary
