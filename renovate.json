@@ -1,6 +1,87 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
-  ]
+    "config:recommended",
+    ":disableRateLimiting",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":enablePreCommit",
+    "docker:enableMajor",
+    ":timezone(America/New_York)"
+  ],
+  "schedule": [
+    "after 10pm every weekday",
+    "before 5am every weekday",
+    "every weekend"
+  ],
+  "prConcurrentLimit": 3,
+  "prCreation": "immediate",
+  "rebaseWhen": "behind-base-branch",
+  "automerge": true,
+  "platformAutomerge": true,
+  "packageRules": [
+    {
+      "description": "Auto-merge non-major updates for stable images",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    {
+      "description": "Group all minor and patch updates together",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch",
+      "automerge": true
+    },
+    {
+      "description": "Disable auto-merge for major updates - need review",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["major-update"]
+    },
+    {
+      "description": "Auto-merge digest updates daily",
+      "matchUpdateTypes": ["digest"],
+      "automerge": true,
+      "schedule": ["at any time"],
+      "stabilityDays": 0
+    },
+    {
+      "description": "Stability period for minor/patch before auto-merge",
+      "matchUpdateTypes": ["minor", "patch"],
+      "stabilityDays": 3
+    },
+    {
+      "description": "Common stable images - faster auto-merge",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "postgres",
+        "mariadb",
+        "nginx",
+        "redis",
+        "traefik"
+      ],
+      "stabilityDays": 1
+    },
+    {
+      "description": "Security updates - immediate auto-merge",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["patch"],
+      "vulnerabilitySeverity": "high",
+      "stabilityDays": 0,
+      "automerge": true
+    }
+  ],
+  "docker": {
+    "pinDigests": true
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on monday"]
+  }
 }
