@@ -63,14 +63,6 @@
         "traefik"
       ],
       "stabilityDays": 1
-    },
-    {
-      "description": "Security updates - immediate auto-merge",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["patch"],
-      "vulnerabilitySeverity": "high",
-      "stabilityDays": 0,
-      "automerge": true
     }
   ],
   "docker": {
