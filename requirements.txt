@@ -18,7 +18,7 @@ apscheduler==3.11.2
 
 # Logging and monitoring
 structlog==23.3.0
-python-json-logger==2.0.7
+python-json-logger==4.0.0
 
 # Environment variables
 python-dotenv==1.2.1
