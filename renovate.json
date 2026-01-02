@@ -21,40 +21,68 @@
   "platformAutomerge": true,
   "packageRules": [
     {
+      "matchCategories": [
+        "docker"
+      ],
+      "pinDigests": true
+    },
+    {
       "description": "Auto-merge non-major updates for stable images",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
       "automerge": true,
       "automergeType": "branch"
     },
     {
       "description": "Group all minor and patch updates together",
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "all non-major dependencies",
       "groupSlug": "all-minor-patch",
       "automerge": true
     },
     {
       "description": "Disable auto-merge for major updates - need review",
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": false,
-      "labels": ["major-update"]
+      "labels": [
+        "major-update"
+      ]
     },
     {
       "description": "Auto-merge digest updates daily",
-      "matchUpdateTypes": ["digest"],
+      "matchUpdateTypes": [
+        "digest"
+      ],
       "automerge": true,
-      "schedule": ["at any time"],
-      "stabilityDays": 0
+      "schedule": [
+        "at any time"
+      ],
+      "minimumReleaseAge": null
     },
     {
       "description": "Stability period for minor/patch before auto-merge",
-      "matchUpdateTypes": ["minor", "patch"],
-      "stabilityDays": 3
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "minimumReleaseAge": "3 days"
     },
     {
       "description": "Common stable images - faster auto-merge",
-      "matchDatasources": ["docker"],
+      "matchDatasources": [
+        "docker"
+      ],
       "matchPackageNames": [
         "postgres",
         "mariadb",
@@ -62,18 +90,19 @@
         "redis",
         "traefik"
       ],
-      "stabilityDays": 1
+      "minimumReleaseAge": "1 day"
     }
   ],
-  "docker": {
-    "pinDigests": true
-  },
   "vulnerabilityAlerts": {
     "enabled": true,
-    "labels": ["security"]
+    "labels": [
+      "security"
+    ]
   },
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 4am on monday"]
+    "schedule": [
+      "before 4am on monday"
+    ]
   }
 }
