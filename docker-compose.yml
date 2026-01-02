@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15-alpine@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21
     container_name: whoopster-postgres
     restart: unless-stopped
     environment:
@@ -66,7 +66,7 @@ services:
 
   # Grafana Dashboard
   grafana:
-    image: grafana/grafana:10.2.0
+    image: grafana/grafana:10.2.0@sha256:1ee0c54286b8ca09a3dd1419ff8653e7780a148a006ac088544203bb0affe550
     container_name: whoopster-grafana
     restart: unless-stopped
     depends_on:
