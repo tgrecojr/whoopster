@@ -41,7 +41,7 @@ class TestDataSyncIntegration:
             # Mock rate limiter
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
                 # Mock API response
-                respx.get(f"{client.base_url}/developer/v1/activity/sleep").mock(
+                respx.get(f"{client.base_url}/developer/v2/activity/sleep").mock(
                     return_value=httpx.Response(200, json=mock_whoop_sleep_response)
                 )
 
@@ -106,7 +106,7 @@ class TestDataSyncIntegration:
                     mock_context.return_value.__exit__ = mock_exit
 
                     # First sync - return response with 80.0
-                    route = respx.get(f"{client.base_url}/developer/v1/activity/sleep")
+                    route = respx.get(f"{client.base_url}/developer/v2/activity/sleep")
                     route.mock(return_value=httpx.Response(200, json=mock_whoop_sleep_response))
 
                     await service.sync_sleep_records()
@@ -152,16 +152,16 @@ class TestDataSyncIntegration:
         ):
             with patch.object(collector.rate_limiter, "acquire", new=AsyncMock()):
                 # Mock all API endpoints
-                respx.get(f"{collector.whoop_client.base_url}/developer/v1/activity/sleep").mock(
+                respx.get(f"{collector.whoop_client.base_url}/developer/v2/activity/sleep").mock(
                     return_value=httpx.Response(200, json=mock_whoop_sleep_response)
                 )
-                respx.get(f"{collector.whoop_client.base_url}/developer/v1/recovery").mock(
+                respx.get(f"{collector.whoop_client.base_url}/developer/v2/recovery").mock(
                     return_value=httpx.Response(200, json=mock_whoop_recovery_response)
                 )
-                respx.get(f"{collector.whoop_client.base_url}/developer/v1/activity/workout").mock(
+                respx.get(f"{collector.whoop_client.base_url}/developer/v2/activity/workout").mock(
                     return_value=httpx.Response(200, json=mock_whoop_workout_response)
                 )
-                respx.get(f"{collector.whoop_client.base_url}/developer/v1/cycle").mock(
+                respx.get(f"{collector.whoop_client.base_url}/developer/v2/cycle").mock(
                     return_value=httpx.Response(200, json=mock_whoop_cycle_response)
                 )
 
@@ -220,7 +220,7 @@ class TestDataSyncIntegration:
             new=AsyncMock(return_value=test_oauth_token.access_token),
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
-                route = respx.get(f"{client.base_url}/developer/v1/activity/sleep")
+                route = respx.get(f"{client.base_url}/developer/v2/activity/sleep")
                 route.mock(
                     return_value=httpx.Response(200, json=mock_whoop_sleep_response)
                 )
@@ -254,7 +254,7 @@ class TestDataSyncIntegration:
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
                 # Mock API error
-                respx.get(f"{client.base_url}/developer/v1/activity/sleep").mock(
+                respx.get(f"{client.base_url}/developer/v2/activity/sleep").mock(
                     return_value=httpx.Response(500, json={"error": "Internal server error"})
                 )
 
@@ -345,7 +345,7 @@ class TestDataSyncIntegration:
             new=AsyncMock(return_value=test_oauth_token.access_token),
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
-                route = respx.get(f"{client.base_url}/developer/v1/activity/sleep")
+                route = respx.get(f"{client.base_url}/developer/v2/activity/sleep")
                 route.side_effect = [
                     httpx.Response(200, json=page1),
                     httpx.Response(200, json=page2),

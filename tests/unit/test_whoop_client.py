@@ -127,7 +127,7 @@ class TestWhoopClientAsync:
             new=AsyncMock(return_value="test_token"),
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
-                respx.get(f"{client.base_url}/developer/v1/activity/sleep").mock(
+                respx.get(f"{client.base_url}/developer/v2/activity/sleep").mock(
                     return_value=httpx.Response(200, json=mock_whoop_sleep_response)
                 )
 
@@ -147,7 +147,7 @@ class TestWhoopClientAsync:
             new=AsyncMock(return_value="test_token"),
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
-                respx.get(f"{client.base_url}/developer/v1/activity/workout").mock(
+                respx.get(f"{client.base_url}/developer/v2/activity/workout").mock(
                     return_value=httpx.Response(200, json=mock_whoop_workout_response)
                 )
 
@@ -167,7 +167,7 @@ class TestWhoopClientAsync:
             new=AsyncMock(return_value="test_token"),
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
-                respx.get(f"{client.base_url}/developer/v1/recovery").mock(
+                respx.get(f"{client.base_url}/developer/v2/recovery").mock(
                     return_value=httpx.Response(200, json=mock_whoop_recovery_response)
                 )
 
@@ -187,7 +187,7 @@ class TestWhoopClientAsync:
             new=AsyncMock(return_value="test_token"),
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
-                respx.get(f"{client.base_url}/developer/v1/cycle").mock(
+                respx.get(f"{client.base_url}/developer/v2/cycle").mock(
                     return_value=httpx.Response(200, json=mock_whoop_cycle_response)
                 )
 
@@ -206,7 +206,7 @@ class TestWhoopClientAsync:
             new=AsyncMock(return_value="test_token"),
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
-                respx.get(f"{client.base_url}/developer/v1/user/profile/basic").mock(
+                respx.get(f"{client.base_url}/developer/v2/user/profile/basic").mock(
                     return_value=httpx.Response(200, json=mock_whoop_user_profile)
                 )
 
@@ -239,7 +239,7 @@ class TestWhoopClientAsync:
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
                 # Mock paginated responses
-                route = respx.get(f"{client.base_url}/developer/v1/activity/sleep")
+                route = respx.get(f"{client.base_url}/developer/v2/activity/sleep")
                 route.side_effect = [
                     httpx.Response(200, json=page1),
                     httpx.Response(200, json=page2),
@@ -265,7 +265,7 @@ class TestWhoopClientAsync:
         ):
             with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
                 mock_response = {"records": [], "next_token": None}
-                route = respx.get(f"{client.base_url}/developer/v1/activity/sleep")
+                route = respx.get(f"{client.base_url}/developer/v2/activity/sleep")
                 route.mock(return_value=httpx.Response(200, json=mock_response))
 
                 await client.get_sleep_records(start=start, end=end)

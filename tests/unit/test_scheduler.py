@@ -124,7 +124,7 @@ class TestWhoopSchedulerAsync:
             # Cleanup
             scheduler.scheduler.remove_job(f"sync_user_{test_user.id}")
 
-    def test_start_scheduler(self):
+    async def test_start_scheduler(self):
         """Test starting the scheduler."""
         scheduler = WhoopScheduler(use_persistent_jobstore=False)
 
@@ -135,7 +135,7 @@ class TestWhoopSchedulerAsync:
         # Cleanup
         scheduler.shutdown(wait=False)
 
-    def test_start_scheduler_already_running(self):
+    async def test_start_scheduler_already_running(self):
         """Test starting scheduler when already running."""
         scheduler = WhoopScheduler(use_persistent_jobstore=False)
 
@@ -148,15 +148,13 @@ class TestWhoopSchedulerAsync:
         # Cleanup
         scheduler.shutdown(wait=False)
 
-    def test_shutdown_scheduler(self):
+    async def test_shutdown_scheduler(self):
         """Test shutting down the scheduler."""
         scheduler = WhoopScheduler(use_persistent_jobstore=False)
 
         scheduler.start()
         assert scheduler.scheduler.running is True
 
-        # Shutdown should complete without error
-        # Note: AsyncIOScheduler may not fully stop when called from sync context
         scheduler.shutdown(wait=True)
 
     def test_shutdown_scheduler_not_running(self):
