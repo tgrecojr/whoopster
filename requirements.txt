@@ -21,7 +21,7 @@ structlog==25.5.0
 python-json-logger==4.0.0
 
 # Environment variables
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 
 # Testing
 pytest==9.0.2
