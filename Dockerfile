@@ -5,7 +5,7 @@
 # =============================================================================
 # Stage 1: Builder
 # =============================================================================
-FROM python:3.14-slim@sha256:1697e8e8d39bf168e177ac6b5fdab6df86d81cfc24dae17dfb96cfc3ef76b4dd as builder
+FROM python:3.14-slim@sha256:33ef7446e8c14b21cb247e23afbcdc90e98853b70812ca46b2265e769a7dfb8b as builder
 
 # Set working directory
 WORKDIR /build
@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir --prefix=/install --no-warn-script-location \
 # =============================================================================
 # Stage 2: Runtime
 # =============================================================================
-FROM python:3.14-slim@sha256:1697e8e8d39bf168e177ac6b5fdab6df86d81cfc24dae17dfb96cfc3ef76b4dd
+FROM python:3.14-slim@sha256:33ef7446e8c14b21cb247e23afbcdc90e98853b70812ca46b2265e769a7dfb8b
 
 # Metadata
 LABEL maintainer="whoopster"
