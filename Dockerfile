@@ -65,4 +65,4 @@ USER whoopster
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD python -c "import sys; from src.config import settings; sys.exit(0)"
 
-CMD ["sh", "-c", "alembic upgrade head && python -m src.main"]
+CMD ["sh", "-c", "/app/.venv/bin/alembic upgrade head && /app/.venv/bin/python -m src.main"]
