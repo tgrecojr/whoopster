@@ -45,15 +45,10 @@ Feature requests are welcome! Please:
 git clone https://github.com/yourusername/whoopster.git
 cd whoopster
 
-# Create a virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install development dependencies
-pip install black isort mypy pytest pytest-cov
+# Install uv (https://docs.astral.sh/uv/), then install runtime + dev deps
+# into a project-local .venv. uv reads pyproject.toml + uv.lock and selects
+# the Python version from .python-version automatically.
+uv sync --frozen
 
 # Copy environment template
 cp .env.example .env
@@ -79,22 +74,22 @@ cp .env.example .env
 3. **Format code** before committing:
    ```bash
    # Format with black
-   black src/ tests/
+   uv run black src/ tests/
 
    # Sort imports
-   isort src/ tests/
+   uv run isort src/ tests/
 
    # Check types
-   mypy src/
+   uv run mypy src/
    ```
 
 4. **Write tests** for new functionality:
    ```bash
    # Run tests
-   pytest tests/ -v
+   uv run pytest tests/ -v
 
    # Check coverage
-   pytest tests/ --cov=src --cov-report=html
+   uv run pytest tests/ --cov=src --cov-report=html
    ```
 
 5. **Update documentation**:

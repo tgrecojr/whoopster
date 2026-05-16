@@ -1,0 +1,86 @@
+# Git
+.git/
+.gitattributes
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+
+# Build outputs
+build/
+dist/
+sdist/
+wheels/
+develop-eggs/
+.eggs/
+
+# Tests, coverage, lint caches
+tests/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Docs and meta (not needed in image)
+docs/
+CONTRIBUTING.md
+SECURITY_FINDINGS.md
+LICENSE
+renovate.json
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Claude / agent tooling
+.claude/
+.serena/
+.cache_ggshield
+CLAUDE.md
+CLAUDE.local.md
+
+# CI config (not needed inside image)
+.github/
+
+# Grafana local state
+grafana/data/
+
+# Logs
+logs/
+*.log

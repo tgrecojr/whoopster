@@ -1,5 +1,13 @@
 """Pytest configuration and fixtures for Whoopster tests."""
 
+import os
+
+# Provide a per-run Fernet key for tests before src.config imports validate it.
+# Generated fresh each session so no secret is committed to the repo.
+from cryptography.fernet import Fernet
+
+os.environ.setdefault("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Generator, AsyncGenerator

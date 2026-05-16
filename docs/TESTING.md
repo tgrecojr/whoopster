@@ -1,5 +1,10 @@
 # Whoopster Testing Guide
 
+> **Running commands:** This project uses [uv](https://docs.astral.sh/uv/) for
+> dependency management. Prefix every `pytest`, `python`, `black`, `mypy`,
+> etc. command in this doc with `uv run` (e.g., `uv run pytest -m unit`).
+> `uv run` automatically uses the project's locked `.venv`.
+
 ## Overview
 
 Whoopster has a comprehensive test suite with 133 tests covering unit tests, integration tests, and database tests. The test suite is designed for cross-database compatibility, running with SQLite in tests while supporting PostgreSQL in production.
@@ -912,21 +917,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
 
     - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.11'
+      run: uv python install 3.14
 
     - name: Install dependencies
-      run: |
-        pip install -r requirements.txt
-        pip install pytest pytest-cov pytest-asyncio
+      run: uv sync --frozen
 
     - name: Run tests
       run: |
-        pytest tests/ \
+        uv run pytest tests/ \
           --cov=src \
           --cov-report=term \
           --cov-report=xml \
@@ -934,7 +941,7 @@ jobs:
           -v
 
     - name: Upload coverage
-      uses: codecov/codecov-action@v2
+      uses: codecov/codecov-action@v4
       with:
         files: ./coverage.xml
         fail_ci_if_error: true
@@ -949,7 +956,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: pytest tests/ -v
+        entry: uv run pytest tests/ -v
         language: system
         pass_filenames: false
         always_run: true
@@ -1066,7 +1073,7 @@ rm -rf .coverage htmlcov/ .pytest_cache/
 ### Reinstall Dependencies
 
 ```bash
-pip install -r requirements.txt --force-reinstall
+uv sync --frozen --reinstall
 ```
 
 ### Verify Test Environment

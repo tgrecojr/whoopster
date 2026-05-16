@@ -1,0 +1,83 @@
+[project]
+name = "whoopster"
+version = "1.0.0"
+description = "Whoop data collector and synchronization service"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "sqlalchemy==2.0.49",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.1",
+    "psycopg2-binary==2.9.12",
+    "alembic==1.18.4",
+    "httpx==0.28.1",
+    "authlib==1.7.2",
+    "tenacity==9.1.4",
+    "cryptography==48.0.0",
+    "apscheduler==3.11.2",
+    "structlog==25.5.0",
+    "python-json-logger==4.1.0",
+    "python-dotenv==1.2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.1.0",
+    "pytest-mock==3.15.1",
+    "pytest-env==1.6.0",
+    "faker==40.15.0",
+    "freezegun==1.5.5",
+    "respx==0.23.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow running tests",
+    "asyncio: Tests that use asyncio",
+]
+asyncio_mode = "auto"
+addopts = [
+    "--verbose",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-branch",
+    "-ra",
+]
+norecursedirs = [
+    ".git",
+    ".tox",
+    "dist",
+    "build",
+    "*.egg",
+    "__pycache__",
+    ".env",
+    "venv",
+]
+env = [
+    "POSTGRES_DB=whoopster_test",
+    "POSTGRES_USER=whoopster_test",
+    "POSTGRES_PASSWORD=test_password",
+    "POSTGRES_HOST=localhost",
+    "POSTGRES_PORT=5432",
+    "WHOOP_CLIENT_ID=test_client_id",
+    "WHOOP_CLIENT_SECRET=test_client_secret",
+    "WHOOP_REDIRECT_URI=http://localhost:8000/callback",
+    "LOG_LEVEL=DEBUG",
+    "ENVIRONMENT=test",
+]
