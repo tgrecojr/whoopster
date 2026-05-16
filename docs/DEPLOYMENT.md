@@ -266,15 +266,12 @@ See [kubernetes/](../kubernetes/) directory for Kubernetes manifests (not yet im
 For deployments without Docker:
 
 ```bash
-# Install Python 3.11+
-sudo apt-get install python3.11 python3.11-venv
+# Install uv (https://docs.astral.sh/uv/); it provisions Python for you
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+# Install runtime + dev dependencies into a project-local .venv
+# (uv reads pyproject.toml + uv.lock and selects Python from .python-version)
+uv sync --frozen
 
 # Set up PostgreSQL
 sudo apt-get install postgresql-15
@@ -282,10 +279,10 @@ sudo -u postgres createdb whoopster
 sudo -u postgres createuser whoopster
 
 # Run migrations
-alembic upgrade head
+uv run alembic upgrade head
 
 # Start application
-python -m src.main
+uv run python -m src.main
 ```
 
 ## Post-Deployment Steps

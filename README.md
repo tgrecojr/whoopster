@@ -292,9 +292,9 @@ whoopster/
 │
 ├── docker-compose.yml          # Multi-container orchestration
 ├── Dockerfile                  # Application container
-├── requirements.txt            # Python dependencies
+├── pyproject.toml              # Python project + dependencies (PEP 621)
+├── uv.lock                     # Locked dependency versions (uv)
 ├── alembic.ini                 # Database migration config
-├── pytest.ini                  # Test configuration
 ├── .env.example                # Environment template
 └── README.md                   # This file
 ```
@@ -446,15 +446,15 @@ MAX_REQUESTS_PER_MINUTE=60
 If you're running Whoopster locally without Docker, environment variables are loaded automatically from `.env` using `python-dotenv`. Simply ensure your `.env` file is in the project root:
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
+# Install dependencies into a project-local .venv
+uv sync --frozen
 
 # Run the app (automatically loads .env)
-python -m src.main
+uv run python -m src.main
 
 # Or run from any directory (also works)
 cd /some/other/directory
-python -m /path/to/whoopster/src.main  # Still finds .env correctly
+uv run --project /path/to/whoopster python -m src.main  # Still finds .env correctly
 ```
 
 The application uses `python-dotenv` to ensure the `.env` file is loaded from the project root regardless of your current working directory.
@@ -617,34 +617,33 @@ docker-compose exec app alembic downgrade -1
 
 ### Local Setup
 
-```bash
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+Prerequisite: install [uv](https://docs.astral.sh/uv/) (`brew install uv` or see the docs).
 
-# Install dependencies
-pip install -r requirements.txt
+```bash
+# Install runtime + dev dependencies into a project-local .venv
+# (uv reads pyproject.toml + uv.lock and selects the Python from .python-version)
+uv sync --frozen
 
 # Set up pre-commit hooks (optional)
-pip install pre-commit
+uv pip install pre-commit
 pre-commit install
 
 # Run locally (requires PostgreSQL running)
 export $(cat .env | xargs)
-python -m src.main
+uv run python -m src.main
 ```
 
 ### Run Tests
 
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run with coverage report
-pytest --cov=src --cov-report=html
+uv run pytest --cov=src --cov-report=html
 
 # Run specific test file
-pytest tests/unit/test_whoop_client.py -v
+uv run pytest tests/unit/test_whoop_client.py -v
 ```
 
 The test suite includes 132 tests covering data sync, OAuth flow, API client, and database operations. See [docs/TESTING.md](docs/TESTING.md) for details.
@@ -653,16 +652,16 @@ The test suite includes 132 tests covering data sync, OAuth flow, API client, an
 
 ```bash
 # Format code
-black src/ tests/
+uv run black src/ tests/
 
 # Sort imports
-isort src/ tests/
+uv run isort src/ tests/
 
 # Type checking
-mypy src/
+uv run mypy src/
 
 # Linting
-flake8 src/ tests/
+uv run flake8 src/ tests/
 ```
 
 ## Grafana Setup
@@ -1054,17 +1053,17 @@ print(f'Utilization: {stats[\"utilization_percent\"]:.1f}%')
 
 ```bash
 # Run tests with verbose output
-pytest -vv --tb=short
+uv run pytest -vv --tb=short
 
 # Run specific failing test
-pytest tests/path/to/test.py::TestClass::test_method -vv
+uv run pytest tests/path/to/test.py::TestClass::test_method -vv
 
 # Check test database
 ls -la .test_db.sqlite  # Should be created/deleted per test
 
 # Clear pytest cache
 rm -rf .pytest_cache
-pytest --cache-clear
+uv run pytest --cache-clear
 ```
 
 ## Performance Tips

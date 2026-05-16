@@ -1,74 +1,68 @@
+# syntax=docker/dockerfile:1.7
 # Multi-stage Dockerfile for Whoopster
-# Stage 1: Builder - Install dependencies and compile
+# Stage 1: Builder - Install dependencies with uv
 # Stage 2: Runtime - Minimal production image
 
 # =============================================================================
 # Stage 1: Builder
 # =============================================================================
-FROM python:3.14-slim@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856 as builder
+FROM python:3.14-slim@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856 AS builder
 
-# Set working directory
-WORKDIR /build
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /usr/local/bin/
 
-# Install build dependencies
+# Build deps (gcc/g++/libpq-dev) kept in case any wheel is unavailable on 3.14
+# and uv falls back to building from sdist.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for layer caching)
-COPY requirements.txt .
+WORKDIR /app
 
-# Install Python dependencies to /install
-RUN pip install --no-cache-dir --prefix=/install --no-warn-script-location \
-    -r requirements.txt
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never
+
+COPY pyproject.toml uv.lock ./
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
 # =============================================================================
 # Stage 2: Runtime
 # =============================================================================
 FROM python:3.14-slim@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856
 
-# Metadata
 LABEL maintainer="whoopster"
 LABEL description="Whoop data collector and synchronization service"
 LABEL version="1.0.0"
 
-# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
-    # Prevent pip from checking for updates
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PATH="/app/.venv/bin:$PATH"
 
-# Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
 RUN groupadd -r whoopster && useradd -r -g whoopster whoopster
 
-# Set working directory
 WORKDIR /app
 
-# Copy Python dependencies from builder
-COPY --from=builder /install /usr/local
+COPY --from=builder /app/.venv /app/.venv
 
-# Copy application code
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
 COPY alembic.ini /app/
 
-# Create directories for logs and data
 RUN mkdir -p /app/logs && chown -R whoopster:whoopster /app
 
-# Switch to non-root user
 USER whoopster
 
-# Health check - simple Python import test
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD python -c "import sys; from src.config import settings; sys.exit(0)"
 
-# Run database migrations and start application
 CMD ["sh", "-c", "alembic upgrade head && python -m src.main"]
