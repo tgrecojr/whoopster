@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # Multi-stage Dockerfile for Whoopster
 # Stage 1: Builder - Install dependencies with uv
 # Stage 2: Runtime - Minimal production image
@@ -8,7 +8,7 @@
 # =============================================================================
 FROM python:3.14-slim@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856 AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11@sha256:1025398289b62de8269e70c45b91ffa37c373f38118d7da036fb8bb8efc85d97 /uv /uvx /usr/local/bin/
 
 # Build deps (gcc/g++/libpq-dev) kept in case any wheel is unavailable on 3.14
 # and uv falls back to building from sdist.
