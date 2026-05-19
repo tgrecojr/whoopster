@@ -8,7 +8,7 @@
 # =============================================================================
 FROM python:3.14-slim@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856 AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.11@sha256:1025398289b62de8269e70c45b91ffa37c373f38118d7da036fb8bb8efc85d97 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11@sha256:e590846f4776907b254ac0f44b5b380347af5d90d668138ca7938d1b0c2f98d3 /uv /uvx /usr/local/bin/
 
 # Build deps (gcc/g++/libpq-dev) kept in case any wheel is unavailable on 3.14
 # and uv falls back to building from sdist.
