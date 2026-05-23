@@ -1,0 +1,38 @@
+name: GHCR retention
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  prune:
+    name: Prune old GHCR versions
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Prune from the full version pool, but preserve `latest`.
+      # Always keeps the 5 most recent versions regardless of tag, so the
+      # last 5 sha-* tagged builds survive for rollback.
+      - name: Prune tagged + untagged (keep latest + last 5)
+        uses: actions/delete-package-versions@v5
+        continue-on-error: true
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          min-versions-to-keep: 5
+          ignore-versions: '^latest$'
+
+      # Step 2: Explicit cleanup of untagged versions (build cache layers,
+      # orphaned manifests). Keeps the 5 most recent untagged for safety.
+      - name: Prune untagged only (keep last 5 untagged)
+        uses: actions/delete-package-versions@v5
+        continue-on-error: true
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: 'true'
