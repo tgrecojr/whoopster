@@ -44,8 +44,7 @@ jobs:
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
         with:
           scan-args: |-
-            --recursive
-            ./
+            --lockfile=uv.lock
 
       - name: pip-audit
         uses: pypa/gh-action-pip-audit@v1.1.0
