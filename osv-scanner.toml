@@ -1,0 +1,9 @@
+# OSV-Scanner ignore allowlist for uv.lock at the repo root.
+# Format: https://google.github.io/osv-scanner/configuration/
+#
+# Per-vuln entries go here. Example:
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2026-12-31
+# reason = "Not exploitable in our usage of <package>."
