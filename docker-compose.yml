@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:18-alpine@sha256:b40d931bd0e7ce6eecc59a5a6ac3b3c04a01e559750e73e7086b6dbd7f8bf545
+    image: cgr.dev/chainguard/postgres:latest
     container_name: whoopster-postgres
     restart: unless-stopped
     environment:
@@ -58,7 +58,7 @@ services:
     networks:
       - whoopster-network
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'from src.database.session import verify_connection; import sys; sys.exit(0 if verify_connection() else 1)'"]
+      test: ["CMD", "python", "-c", "from src.database.session import verify_connection; import sys; sys.exit(0 if verify_connection() else 1)"]
       interval: 60s
       timeout: 10s
       retries: 3
@@ -66,6 +66,8 @@ services:
 
   # Grafana Dashboard
   grafana:
+    # Chainguard's grafana image is not on the public tier; staying on the
+    # upstream image (digest-pinned, Renovate-tracked).
     image: grafana/grafana:13.0.1@sha256:0f86bada30d65ef9d0183b90c1e2682ac92d53d95da8bed322b984ea78a4a73a
     container_name: whoopster-grafana
     restart: unless-stopped
