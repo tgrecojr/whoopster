@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # =============================================================================
 # Stage 2: Runtime (distroless)
 # =============================================================================
-FROM cgr.dev/chainguard/python:latest@sha256:f960fea6d1fb1c0ad626558d9db323ff84468927ac37cd7fa889b512ba0dc1c9
+FROM cgr.dev/chainguard/python:latest@sha256:5383e03b0bcb75c82280b6a75c79cb97a4eb6ba5cd8fdb234304df28e077a717
 
 LABEL maintainer="whoopster"
 LABEL description="Whoop data collector and synchronization service"
