@@ -5,7 +5,7 @@ description = "Whoop data collector and synchronization service"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "sqlalchemy==2.0.49",
+    "sqlalchemy==2.0.50",
     "pydantic==2.13.4",
     "pydantic-settings==2.14.1",
     "psycopg2-binary==2.9.12",
