@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # PostgreSQL Database
   postgres:
-    image: cgr.dev/chainguard/postgres:latest@sha256:c682829e36427a783eccf4c58dc3f466a359f53aa6077d3e077f654c9fd3ba00
+    image: cgr.dev/chainguard/postgres:latest@sha256:ace84675fa48593b0213d74ab330acdc010b5fcbc91901dce96c6f3faade1465
     container_name: whoopster-postgres
     restart: unless-stopped
     environment:
