@@ -9,9 +9,10 @@ from src.services.sleep_service import SleepService
 from src.services.recovery_service import RecoveryService
 from src.services.workout_service import WorkoutService
 from src.services.cycle_service import CycleService
+from src.services.body_measurement_service import BodyMeasurementService
 from src.services.data_collector import DataCollector, sync_user_data
-from src.api.whoop_client import WhoopClient
-from src.models.db_models import SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord, SyncStatus
+from src.api.whoop_client import WhoopClient, WhoopAPIError
+from src.models.db_models import SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord, BodyMeasurement, SyncStatus
 
 
 @pytest.mark.unit
@@ -41,6 +42,17 @@ class TestSleepService:
         assert "end_time" in db_record
         assert db_record["sleep_performance_percentage"] == 85.5
         assert db_record["raw_data"] == api_record
+        # Promoted fields and linkage
+        assert db_record["cycle_id"] == 1545424244
+        assert db_record["v1_id"] is None
+        assert db_record["in_bed_duration"] == 390000
+        assert db_record["no_data_duration"] == 0
+        assert db_record["sleep_cycle_count"] == 5
+        assert db_record["disturbance_count"] == 8
+        assert db_record["sleep_needed_baseline"] == 26785666
+        assert db_record["sleep_debt"] == 2869059
+        assert db_record["sleep_need_from_strain"] == 165613
+        assert db_record["sleep_need_from_nap"] == 0
 
     async def test_sync_sleep_records(self, test_user, db_session, mock_whoop_sleep_response):
         """Test syncing sleep records."""
@@ -116,6 +128,9 @@ class TestRecoveryService:
         assert db_record["user_id"] == test_user.id
         assert db_record["recovery_score"] == 75.0
         assert db_record["hrv_rmssd"] == 65.5
+        # Linkage: integer cycle_id and the sleep UUID this recovery derives from
+        assert db_record["cycle_id"] == 1545424244
+        assert str(db_record["sleep_id"]) == api_record["sleep_id"]
 
 
 @pytest.mark.unit
@@ -167,6 +182,124 @@ class TestCycleService:
         assert db_record["user_id"] == test_user.id
         assert db_record["strain_score"] == 14.5
         assert db_record["kilojoules"] == 2000.0
+        assert db_record["whoop_cycle_id"] == 1545424244
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBodyMeasurementService:
+    """Tests for BodyMeasurementService."""
+
+    async def test_transform_api_record(self, test_user, mock_whoop_body_measurement):
+        """Test transforming and normalizing a body measurement record."""
+        client = WhoopClient(user_id=test_user.id)
+        service = BodyMeasurementService(user_id=test_user.id, whoop_client=client)
+
+        db_record = service._transform_api_record(mock_whoop_body_measurement)
+
+        assert db_record["user_id"] == test_user.id
+        assert db_record["max_heart_rate"] == 190
+        # Values are quantized to the column precision (3 decimals)
+        assert str(db_record["height_meter"]) == "1.829"
+        assert str(db_record["weight_kilogram"]) == "90.718"
+        assert db_record["raw_data"] == mock_whoop_body_measurement
+
+    async def test_sync_inserts_when_changed(
+        self, test_user, db_session, mock_whoop_body_measurement
+    ):
+        """A new measurement is inserted when none exists yet."""
+        client = WhoopClient(user_id=test_user.id)
+        service = BodyMeasurementService(user_id=test_user.id, whoop_client=client)
+
+        def mock_exit(*args):
+            db_session.commit()
+            return None
+
+        with patch.object(
+            client,
+            "get_body_measurement",
+            new=AsyncMock(return_value=mock_whoop_body_measurement),
+        ):
+            with patch(
+                "src.services.body_measurement_service.get_db_context"
+            ) as mock_context:
+                mock_context.return_value.__enter__.return_value = db_session
+                mock_context.return_value.__exit__ = mock_exit
+
+                inserted = await service.sync_body_measurement()
+
+                assert inserted == 1
+                rows = (
+                    db_session.query(BodyMeasurement)
+                    .filter_by(user_id=test_user.id)
+                    .all()
+                )
+                assert len(rows) == 1
+                assert rows[0].max_heart_rate == 190
+
+    async def test_sync_skips_when_unchanged(
+        self, test_user, db_session, test_body_measurement, mock_whoop_body_measurement
+    ):
+        """No new row when the fetched values match the latest stored snapshot."""
+        client = WhoopClient(user_id=test_user.id)
+        service = BodyMeasurementService(user_id=test_user.id, whoop_client=client)
+
+        def mock_exit(*args):
+            db_session.commit()
+            return None
+
+        with patch.object(
+            client,
+            "get_body_measurement",
+            new=AsyncMock(return_value=mock_whoop_body_measurement),
+        ):
+            with patch(
+                "src.services.body_measurement_service.get_db_context"
+            ) as mock_context:
+                mock_context.return_value.__enter__.return_value = db_session
+                mock_context.return_value.__exit__ = mock_exit
+
+                inserted = await service.sync_body_measurement()
+
+                assert inserted == 0
+                # Still just the one pre-existing row
+                rows = (
+                    db_session.query(BodyMeasurement)
+                    .filter_by(user_id=test_user.id)
+                    .all()
+                )
+                assert len(rows) == 1
+
+    async def test_sync_skips_gracefully_without_scope(self, test_user, db_session):
+        """A 403 (scope not granted) is a graceful skip, not an error."""
+        client = WhoopClient(user_id=test_user.id)
+        service = BodyMeasurementService(user_id=test_user.id, whoop_client=client)
+
+        def mock_exit(*args):
+            db_session.commit()
+            return None
+
+        with patch.object(
+            client,
+            "get_body_measurement",
+            new=AsyncMock(side_effect=WhoopAPIError("forbidden", status_code=403)),
+        ):
+            with patch(
+                "src.services.body_measurement_service.get_db_context"
+            ) as mock_context:
+                mock_context.return_value.__enter__.return_value = db_session
+                mock_context.return_value.__exit__ = mock_exit
+
+                inserted = await service.sync_body_measurement()
+
+                assert inserted == 0
+                sync_status = (
+                    db_session.query(SyncStatus)
+                    .filter_by(user_id=test_user.id, data_type="body_measurement")
+                    .first()
+                )
+                assert sync_status is not None
+                assert sync_status.status == "skipped"
 
 
 @pytest.mark.unit
@@ -209,16 +342,21 @@ class TestDataCollector:
                         collector.cycle_service,
                         "sync_cycle_records",
                         new=AsyncMock(return_value=5),
+                    ), patch.object(
+                        collector.body_measurement_service,
+                        "sync_body_measurement",
+                        new=AsyncMock(return_value=1),
                     ):
                         results = await collector.sync_all_data()
 
                         assert results["user_id"] == test_user.id
-                        assert results["total_records"] == 18
+                        assert results["total_records"] == 19
                         assert results["total_errors"] == 0
                         assert results["results"]["sleep"]["records_synced"] == 5
                         assert results["results"]["recovery"]["records_synced"] == 5
                         assert results["results"]["workout"]["records_synced"] == 3
                         assert results["results"]["cycle"]["records_synced"] == 5
+                        assert results["results"]["body_measurement"]["records_synced"] == 1
 
     async def test_sync_all_data_with_errors(self, test_user):
         """Test syncing with some errors."""
@@ -244,6 +382,10 @@ class TestDataCollector:
                         collector.cycle_service,
                         "sync_cycle_records",
                         new=AsyncMock(return_value=5),
+                    ), patch.object(
+                        collector.body_measurement_service,
+                        "sync_body_measurement",
+                        new=AsyncMock(return_value=0),
                     ):
                         results = await collector.sync_all_data()
 
@@ -310,6 +452,10 @@ class TestDataCollector:
                         collector.cycle_service,
                         "get_cycle_statistics",
                         new=AsyncMock(return_value=mock_stats),
+                    ), patch.object(
+                        collector.body_measurement_service,
+                        "get_body_measurement_statistics",
+                        new=AsyncMock(return_value=mock_stats),
                     ):
                         stats = await collector.get_all_statistics()
 
@@ -318,6 +464,7 @@ class TestDataCollector:
                         assert stats["recovery"]["total_records"] == 10
                         assert stats["workout"]["total_records"] == 10
                         assert stats["cycle"]["total_records"] == 10
+                        assert stats["body_measurement"]["total_records"] == 10
 
     async def test_verify_token(self, test_user):
         """Test verifying token."""

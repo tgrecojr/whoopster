@@ -50,6 +50,9 @@ services:
       WHOOP_AUTH_URL: ${WHOOP_AUTH_URL:-https://api.prod.whoop.com/oauth/oauth2/auth}
       WHOOP_TOKEN_URL: ${WHOOP_TOKEN_URL:-https://api.prod.whoop.com/oauth/oauth2/token}
 
+      # Token encryption (Fernet key used to encrypt OAuth tokens at rest)
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?TOKEN_ENCRYPTION_KEY must be set}
+
       # Application Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-15}

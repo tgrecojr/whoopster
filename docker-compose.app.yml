@@ -1,0 +1,50 @@
+# Standalone app-only compose: just the Whoopster container, no bundled
+# Postgres/Grafana. Every setting comes from .env (env_file below), so the
+# connection target is whatever POSTGRES_HOST / POSTGRES_DB / POSTGRES_PORT
+# you set there — e.g. your main `whoop_db`. Nothing is hardcoded.
+#
+# Normal run (migrate + start scheduler):
+#   docker compose -f docker-compose.app.yml up --build
+#
+# One-off OAuth re-auth (interactive, no shell needed):
+#   docker compose -f docker-compose.app.yml run --build --rm -it \
+#     --entrypoint python app /app/scripts/init_oauth.py --headless
+#
+# IMPORTANT: .env must contain POSTGRES_DB=whoop_db (your real database),
+# a POSTGRES_HOST the container can actually reach, and TOKEN_ENCRYPTION_KEY.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: whoopster:latest
+    container_name: whoopster-app
+    restart: unless-stopped
+    # Pass the entire .env through to the container verbatim — this is what
+    # makes it connect to your main DB instead of a bundled one.
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "from src.database.session import verify_connection; import sys; sys.exit(0 if verify_connection() else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # --- Reaching your Postgres ----------------------------------------------
+    # If your main Postgres is reachable by host/IP from a normal container
+    # (e.g. a published port, host.docker.internal, or a LAN IP in
+    # POSTGRES_HOST), nothing more is needed.
+    #
+    # If it only lives on an existing Docker network (your data showed it at
+    # 172.29.0.15, a Docker-internal address), attach to that network so the
+    # container can reach it — find the name with `docker network ls`:
+    #
+    # networks:
+    #   - whoop_net
+
+# networks:
+#   whoop_net:
+#     external: true
+#     name: <the network your Postgres container is on>

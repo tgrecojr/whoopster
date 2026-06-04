@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 from faker import Faker
 
-from src.models.db_models import Base, User, OAuthToken, SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord
+from src.models.db_models import Base, User, OAuthToken, SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord, BodyMeasurement
 from src.config import settings
 from src.auth.encryption import get_token_encryption
 
@@ -179,7 +179,8 @@ def test_recovery_record(db_session: Session, test_user: User) -> RecoveryRecord
     record = RecoveryRecord(
         id=uuid4(),
         user_id=test_user.id,
-        cycle_id=uuid4(),
+        cycle_id=1545424244,
+        sleep_id=uuid4(),
         created_at_whoop=datetime.now(timezone.utc),
         recovery_score=75.0,
         resting_heart_rate=55,
@@ -251,6 +252,23 @@ def test_cycle_record(db_session: Session, test_user: User) -> CycleRecord:
     return record
 
 
+@pytest.fixture
+def test_body_measurement(db_session: Session, test_user: User) -> BodyMeasurement:
+    """Create a test body measurement record."""
+    record = BodyMeasurement(
+        user_id=test_user.id,
+        height_meter=1.829,
+        weight_kilogram=90.718,
+        max_heart_rate=190,
+        recorded_at=datetime.now(timezone.utc),
+        raw_data={"test": "data"},
+    )
+    db_session.add(record)
+    db_session.commit()
+    db_session.refresh(record)
+    return record
+
+
 # ============================================================================
 # API Mock Data
 # ============================================================================
@@ -262,6 +280,8 @@ def mock_whoop_sleep_response() -> dict:
         "records": [
             {
                 "id": str(uuid4()),
+                "cycle_id": 1545424244,
+                "v1_id": None,
                 "start": "2025-12-18T00:00:00.000Z",
                 "end": "2025-12-18T08:00:00.000Z",
                 "timezone_offset": "-05:00",
@@ -273,6 +293,16 @@ def mock_whoop_sleep_response() -> dict:
                         "total_slow_wave_sleep_time_milli": 120000,
                         "total_rem_sleep_time_milli": 60000,
                         "total_awake_time_milli": 30000,
+                        "total_in_bed_time_milli": 390000,
+                        "total_no_data_time_milli": 0,
+                        "sleep_cycle_count": 5,
+                        "disturbance_count": 8,
+                    },
+                    "sleep_needed": {
+                        "baseline_milli": 26785666,
+                        "need_from_sleep_debt_milli": 2869059,
+                        "need_from_recent_strain_milli": 165613,
+                        "need_from_recent_nap_milli": 0,
                     },
                     "sleep_performance_percentage": 85.5,
                     "sleep_consistency_percentage": 90.0,
@@ -292,7 +322,8 @@ def mock_whoop_recovery_response() -> dict:
         "records": [
             {
                 "id": str(uuid4()),
-                "cycle_id": str(uuid4()),
+                "cycle_id": 1545424244,
+                "sleep_id": str(uuid4()),
                 "created_at": "2025-12-18T08:00:00.000Z",
                 "score_state": "SCORED",
                 "score": {
@@ -351,7 +382,7 @@ def mock_whoop_cycle_response() -> dict:
     return {
         "records": [
             {
-                "id": str(uuid4()),
+                "id": 1545424244,
                 "start": "2025-12-17T00:00:00.000Z",
                 "end": "2025-12-18T00:00:00.000Z",
                 "timezone_offset": "-05:00",
@@ -365,6 +396,16 @@ def mock_whoop_cycle_response() -> dict:
             }
         ],
         "next_token": None,
+    }
+
+
+@pytest.fixture
+def mock_whoop_body_measurement() -> dict:
+    """Mock Whoop API body measurement response."""
+    return {
+        "height_meter": 1.8288,
+        "weight_kilogram": 90.7185,
+        "max_heart_rate": 190,
     }
 
 

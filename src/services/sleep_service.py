@@ -57,10 +57,14 @@ class SleepService:
         """
         # Extract nested score data
         score = api_record.get("score", {})
+        stage_summary = score.get("stage_summary", {})
+        sleep_needed = score.get("sleep_needed", {})
 
         return {
             "id": UUID(api_record["id"]),
             "user_id": self.user_id,
+            "cycle_id": api_record.get("cycle_id"),
+            "v1_id": api_record.get("v1_id"),
             "start_time": datetime.fromisoformat(
                 api_record["start"].replace("Z", "+00:00")
             ),
@@ -68,18 +72,20 @@ class SleepService:
                 api_record["end"].replace("Z", "+00:00")
             ),
             "timezone_offset": api_record.get("timezone_offset"),
-            "light_sleep_duration": score.get("stage_summary", {}).get(
-                "total_light_sleep_time_milli"
-            ),
-            "slow_wave_sleep_duration": score.get("stage_summary", {}).get(
+            "light_sleep_duration": stage_summary.get("total_light_sleep_time_milli"),
+            "slow_wave_sleep_duration": stage_summary.get(
                 "total_slow_wave_sleep_time_milli"
             ),
-            "rem_sleep_duration": score.get("stage_summary", {}).get(
-                "total_rem_sleep_time_milli"
-            ),
-            "awake_duration": score.get("stage_summary", {}).get(
-                "total_awake_time_milli"
-            ),
+            "rem_sleep_duration": stage_summary.get("total_rem_sleep_time_milli"),
+            "awake_duration": stage_summary.get("total_awake_time_milli"),
+            "in_bed_duration": stage_summary.get("total_in_bed_time_milli"),
+            "no_data_duration": stage_summary.get("total_no_data_time_milli"),
+            "sleep_cycle_count": stage_summary.get("sleep_cycle_count"),
+            "disturbance_count": stage_summary.get("disturbance_count"),
+            "sleep_needed_baseline": sleep_needed.get("baseline_milli"),
+            "sleep_debt": sleep_needed.get("need_from_sleep_debt_milli"),
+            "sleep_need_from_strain": sleep_needed.get("need_from_recent_strain_milli"),
+            "sleep_need_from_nap": sleep_needed.get("need_from_recent_nap_milli"),
             "sleep_performance_percentage": score.get("sleep_performance_percentage"),
             "sleep_consistency_percentage": score.get("sleep_consistency_percentage"),
             "respiratory_rate": score.get("respiratory_rate"),

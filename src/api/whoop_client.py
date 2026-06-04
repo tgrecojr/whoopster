@@ -428,3 +428,23 @@ class WhoopClient:
         logger.info("Fetched user profile", user_id=self.user_id)
 
         return response
+
+    async def get_body_measurement(self) -> Dict[str, Any]:
+        """
+        Fetch user body measurements (height, weight, max heart rate).
+
+        Single-object endpoint (no pagination). Requires the
+        read:body_measurement OAuth scope.
+
+        Returns:
+            Body measurement data
+        """
+        endpoint = "/developer/v2/user/measurement/body"
+
+        logger.info("Fetching body measurement", user_id=self.user_id)
+
+        response = await self._make_request(endpoint)
+
+        logger.info("Fetched body measurement", user_id=self.user_id)
+
+        return response
