@@ -49,6 +49,7 @@ class WhoopOAuthClient:
             "read:workout",
             "read:recovery",
             "read:cycles",
+            "read:body_measurement",  # Height, weight, max heart rate
             "offline",  # For refresh tokens
         ]
 

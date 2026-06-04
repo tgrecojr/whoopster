@@ -65,11 +65,13 @@ class CycleService:
                 api_record["end"].replace("Z", "+00:00")
             )
 
-        # Note: v2 API provides integer id, but our DB uses auto-generated UUID
-        # We store the API integer id in raw_data for reference
+        # Note: v2 API provides an integer id, but our DB primary key is an
+        # auto-generated UUID. We persist the integer id as whoop_cycle_id so
+        # sleep/recovery records can join back to their cycle.
         return {
             # "id" omitted - let database auto-generate UUID (API provides integer)
             "user_id": self.user_id,
+            "whoop_cycle_id": api_record.get("id"),
             "start_time": datetime.fromisoformat(
                 api_record["start"].replace("Z", "+00:00")
             ),

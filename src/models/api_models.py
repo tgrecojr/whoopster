@@ -41,6 +41,22 @@ class SleepStages(BaseModel):
     slow_wave_sleep_duration_milli: int
     rem_sleep_duration_milli: int
     awake_duration_milli: int
+    in_bed_duration_milli: Optional[int] = None
+    no_data_duration_milli: Optional[int] = None
+    sleep_cycle_count: Optional[int] = None
+    disturbance_count: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SleepNeeded(BaseModel):
+    """Breakdown of sleep need (all values in milliseconds)."""
+
+    baseline_milli: Optional[int] = None
+    need_from_sleep_debt_milli: Optional[int] = None
+    need_from_recent_strain_milli: Optional[int] = None
+    need_from_recent_nap_milli: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -52,6 +68,7 @@ class SleepScore(BaseModel):
     sleep_performance_percentage: Optional[Decimal] = None
     sleep_consistency_percentage: Optional[Decimal] = None
     sleep_efficiency_percentage: Optional[Decimal] = None
+    sleep_needed: Optional[SleepNeeded] = None
 
     class Config:
         from_attributes = True
@@ -62,6 +79,8 @@ class SleepResponse(WhoopTimestampMixin, WhoopScoreMixin):
 
     id: UUID
     user_id: int
+    cycle_id: Optional[int] = None  # Whoop integer cycle id
+    v1_id: Optional[int] = None  # Legacy v1 sleep id (null for v2-native records)
     nap: bool
     sleep_stages: Optional[SleepStages] = None
     score: Optional[SleepScore] = None
@@ -104,7 +123,8 @@ class RecoveryResponse(WhoopScoreMixin):
 
     id: UUID
     user_id: int
-    cycle_id: UUID
+    cycle_id: Optional[int] = None  # Whoop integer cycle id
+    sleep_id: Optional[UUID] = None  # UUID of the sleep this recovery is derived from
     created_at: datetime
     score: Optional[RecoveryScore] = None
     calibrating: bool = False
@@ -214,6 +234,22 @@ class CycleCollection(BaseModel):
 
     records: List[CycleResponse]
     next_token: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Body Measurement Models
+# ============================================================================
+
+
+class BodyMeasurementResponse(BaseModel):
+    """Body measurement record from Whoop API."""
+
+    height_meter: Optional[Decimal] = None
+    weight_kilogram: Optional[Decimal] = None
+    max_heart_rate: Optional[int] = None
 
     class Config:
         from_attributes = True

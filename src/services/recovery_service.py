@@ -58,12 +58,15 @@ class RecoveryService:
         # Extract nested score data
         score = api_record.get("score", {})
 
-        # Note: v2 API doesn't provide a recovery ID - we use DB auto-generated UUID
-        # cycle_id in API is integer, but our DB uses UUID - we store API data in raw_data
+        # Note: v2 API doesn't provide a recovery ID - we use DB auto-generated UUID.
+        # cycle_id is the Whoop integer cycle id; sleep_id is the UUID of the sleep
+        # record this recovery is derived from (joins to sleep_records.id).
+        sleep_id = api_record.get("sleep_id")
         return {
             # "id" omitted - let database auto-generate UUID
             "user_id": self.user_id,
-            # "cycle_id" omitted - API provides integer, DB expects UUID (stored in raw_data)
+            "cycle_id": api_record.get("cycle_id"),
+            "sleep_id": UUID(sleep_id) if sleep_id else None,
             "created_at_whoop": datetime.fromisoformat(
                 api_record["created_at"].replace("Z", "+00:00")
             ),

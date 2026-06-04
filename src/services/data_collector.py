@@ -15,6 +15,7 @@ from src.services.sleep_service import SleepService
 from src.services.recovery_service import RecoveryService
 from src.services.workout_service import WorkoutService
 from src.services.cycle_service import CycleService
+from src.services.body_measurement_service import BodyMeasurementService
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -66,6 +67,9 @@ class DataCollector:
         self.recovery_service = RecoveryService(user_id, self.whoop_client)
         self.workout_service = WorkoutService(user_id, self.whoop_client)
         self.cycle_service = CycleService(user_id, self.whoop_client)
+        self.body_measurement_service = BodyMeasurementService(
+            user_id, self.whoop_client
+        )
 
         logger.info("Data collector initialized", user_id=user_id)
 
@@ -84,7 +88,8 @@ class DataCollector:
             start: Start date for records (uses last sync if None)
             end: End date for records
             data_types: List of data types to sync (all if None)
-                       Options: "sleep", "recovery", "workout", "cycle"
+                       Options: "sleep", "recovery", "workout", "cycle",
+                       "body_measurement"
 
         Returns:
             Dictionary with sync results for each data type
@@ -98,7 +103,7 @@ class DataCollector:
         )
 
         # Determine which data types to sync
-        all_data_types = ["sleep", "recovery", "workout", "cycle"]
+        all_data_types = ["sleep", "recovery", "workout", "cycle", "body_measurement"]
         data_types = data_types or all_data_types
 
         # Validate data types
@@ -137,6 +142,15 @@ class DataCollector:
             )
             tasks.append(task)
             sync_map[task] = "cycle"
+
+        if "body_measurement" in data_types:
+            # No start/end: the API only exposes the current measurement.
+            # The service skips gracefully if the scope isn't granted yet.
+            task = asyncio.create_task(
+                self.body_measurement_service.sync_body_measurement()
+            )
+            tasks.append(task)
+            sync_map[task] = "body_measurement"
 
         # Wait for all tasks to complete
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -262,6 +276,15 @@ class DataCollector:
         """
         return await self.cycle_service.sync_cycle_records(start=start, end=end)
 
+    async def sync_body_measurement(self) -> int:
+        """
+        Sync only body measurement data.
+
+        Returns:
+            Number of records inserted (0 or 1)
+        """
+        return await self.body_measurement_service.sync_body_measurement()
+
     async def get_all_statistics(self) -> Dict[str, Any]:
         """
         Get statistics for all data types.
@@ -272,11 +295,18 @@ class DataCollector:
         logger.info("Fetching statistics", user_id=self.user_id)
 
         # Fetch all statistics concurrently
-        sleep_stats, recovery_stats, workout_stats, cycle_stats = await asyncio.gather(
+        (
+            sleep_stats,
+            recovery_stats,
+            workout_stats,
+            cycle_stats,
+            body_measurement_stats,
+        ) = await asyncio.gather(
             self.sleep_service.get_sleep_statistics(),
             self.recovery_service.get_recovery_statistics(),
             self.workout_service.get_workout_statistics(),
             self.cycle_service.get_cycle_statistics(),
+            self.body_measurement_service.get_body_measurement_statistics(),
         )
 
         return {
@@ -285,6 +315,7 @@ class DataCollector:
             "recovery": recovery_stats,
             "workout": workout_stats,
             "cycle": cycle_stats,
+            "body_measurement": body_measurement_stats,
         }
 
     async def verify_token(self) -> bool:

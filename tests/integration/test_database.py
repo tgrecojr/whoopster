@@ -175,10 +175,11 @@ class TestDatabaseIntegration:
 
     def test_recovery_with_cycle_reference(self, db_session, test_user):
         """Test recovery record with cycle reference."""
-        # Create cycle
+        # Create cycle (recovery links via the integer whoop_cycle_id, not the UUID pk)
         cycle = CycleRecord(
             id=uuid4(),
             user_id=test_user.id,
+            whoop_cycle_id=1545424244,
             start_time=datetime.now(timezone.utc) - timedelta(hours=24),
             end_time=datetime.now(timezone.utc),
         )
@@ -189,7 +190,7 @@ class TestDatabaseIntegration:
         recovery = RecoveryRecord(
             id=uuid4(),
             user_id=test_user.id,
-            cycle_id=cycle.id,
+            cycle_id=cycle.whoop_cycle_id,
             created_at_whoop=datetime.now(timezone.utc),
             recovery_score=75.0,
         )
@@ -198,7 +199,7 @@ class TestDatabaseIntegration:
 
         db_session.refresh(recovery)
 
-        assert recovery.cycle_id == cycle.id
+        assert recovery.cycle_id == cycle.whoop_cycle_id
 
     def test_jsonb_raw_data_storage(self, db_session, test_user):
         """Test storing raw JSON data."""

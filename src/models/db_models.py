@@ -8,6 +8,7 @@ import json
 from sqlalchemy import (
     Column,
     Integer,
+    BigInteger,
     String,
     DateTime,
     Boolean,
@@ -116,6 +117,9 @@ class User(Base):
     cycle_records = relationship(
         "CycleRecord", back_populates="user", cascade="all, delete-orphan"
     )
+    body_measurements = relationship(
+        "BodyMeasurement", back_populates="user", cascade="all, delete-orphan"
+    )
     sync_statuses = relationship(
         "SyncStatus", back_populates="user", cascade="all, delete-orphan"
     )
@@ -164,6 +168,10 @@ class SleepRecord(Base):
         index=True,
     )
 
+    # Linkage IDs (soft references, no FK constraint - related rows may sync later)
+    cycle_id = Column(BigInteger, index=True)  # Whoop integer cycle id this sleep belongs to
+    v1_id = Column(BigInteger)  # Legacy Whoop v1 sleep id (null for v2-native records)
+
     # Timestamps
     start_time = Column(DateTime(timezone=True), nullable=False, index=True)
     end_time = Column(DateTime(timezone=True), nullable=False, index=True)
@@ -174,6 +182,18 @@ class SleepRecord(Base):
     slow_wave_sleep_duration = Column(Integer)  # milliseconds
     rem_sleep_duration = Column(Integer)  # milliseconds
     awake_duration = Column(Integer)  # milliseconds
+    in_bed_duration = Column(Integer)  # milliseconds (total_in_bed_time_milli)
+    no_data_duration = Column(Integer)  # milliseconds (total_no_data_time_milli)
+
+    # Sleep architecture
+    sleep_cycle_count = Column(Integer)
+    disturbance_count = Column(Integer)
+
+    # Sleep need breakdown (in milliseconds)
+    sleep_needed_baseline = Column(Integer)  # baseline_milli
+    sleep_debt = Column(Integer)  # need_from_sleep_debt_milli
+    sleep_need_from_strain = Column(Integer)  # need_from_recent_strain_milli
+    sleep_need_from_nap = Column(Integer)  # need_from_recent_nap_milli
 
     # Metrics
     sleep_performance_percentage = Column(Numeric(5, 2))
@@ -214,7 +234,9 @@ class RecoveryRecord(Base):
         nullable=False,
         index=True,
     )
-    cycle_id = Column(UUID(as_uuid=True), index=True)  # Links to cycle if available
+    # Linkage IDs (soft references, no FK constraint - related rows may sync later)
+    cycle_id = Column(BigInteger, index=True)  # Whoop integer cycle id this recovery belongs to
+    sleep_id = Column(UUID(as_uuid=True), index=True)  # sleep_records.id this recovery is derived from
 
     # Timestamps
     created_at_whoop = Column(DateTime(timezone=True), nullable=False, index=True)
@@ -321,6 +343,10 @@ class CycleRecord(Base):
         index=True,
     )
 
+    # Natural Whoop integer cycle id (join target for sleep_records.cycle_id /
+    # recovery_records.cycle_id). Indexed soft key, not the primary key.
+    whoop_cycle_id = Column(BigInteger, index=True)
+
     # Timestamps
     start_time = Column(DateTime(timezone=True), nullable=False, index=True)
     end_time = Column(DateTime(timezone=True), nullable=False)
@@ -349,6 +375,48 @@ class CycleRecord(Base):
         return (
             f"<CycleRecord(id={self.id}, user_id={self.user_id}, "
             f"strain={self.strain_score})>"
+        )
+
+
+class BodyMeasurement(Base):
+    """Body measurement snapshots from Whoop API (height, weight, max HR).
+
+    The Whoop API only exposes the *current* measurement, so this is stored as
+    a time-series: a new row is written by the service only when a value differs
+    from the most recent stored row, building a change-history going forward.
+    """
+
+    __tablename__ = "body_measurements"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Measurements
+    height_meter = Column(Numeric(5, 3))  # e.g. 1.829
+    weight_kilogram = Column(Numeric(6, 3))  # e.g. 80.500
+    max_heart_rate = Column(Integer)  # beats per minute
+
+    # When this snapshot was captured (sync time)
+    recorded_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Raw data
+    raw_data = Column(JSONType)
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="body_measurements")
+
+    def __repr__(self) -> str:
+        return (
+            f"<BodyMeasurement(id={self.id}, user_id={self.user_id}, "
+            f"weight_kilogram={self.weight_kilogram})>"
         )
 
 

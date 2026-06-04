@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 
-from src.models.db_models import User, OAuthToken, SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord, SyncStatus
+from src.models.db_models import User, OAuthToken, SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord, BodyMeasurement, SyncStatus
 
 
 @pytest.mark.unit
@@ -236,6 +236,28 @@ class TestCycleRecordModel:
         assert record.id is not None
         assert record.strain_score == 14.5
         assert record.kilojoules == 2000.0
+
+
+@pytest.mark.unit
+class TestBodyMeasurementModel:
+    """Tests for BodyMeasurement model."""
+
+    def test_create_body_measurement(self, db_session, test_user):
+        """Test creating a body measurement record."""
+        record = BodyMeasurement(
+            user_id=test_user.id,
+            height_meter=1.829,
+            weight_kilogram=90.718,
+            max_heart_rate=190,
+            recorded_at=datetime.now(timezone.utc),
+            raw_data={"test": "data"},
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        assert record.id is not None
+        assert record.max_heart_rate == 190
+        assert float(record.weight_kilogram) == 90.718
 
 
 @pytest.mark.unit
