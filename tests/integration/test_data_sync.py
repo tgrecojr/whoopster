@@ -12,7 +12,7 @@ from unittest.mock import patch, AsyncMock
 from src.services.data_collector import DataCollector
 from src.services.sleep_service import SleepService
 from src.api.whoop_client import WhoopClient
-from src.models.db_models import SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord, SyncStatus
+from src.models.db_models import SleepRecord, RecoveryRecord, WorkoutRecord, CycleRecord, BodyMeasurement, SyncStatus
 
 
 @pytest.mark.integration
@@ -141,6 +141,7 @@ class TestDataSyncIntegration:
         mock_whoop_recovery_response,
         mock_whoop_workout_response,
         mock_whoop_cycle_response,
+        mock_whoop_body_measurement,
     ):
         """Test syncing all data types through DataCollector."""
         collector = DataCollector(user_id=test_user.id)
@@ -164,31 +165,37 @@ class TestDataSyncIntegration:
                 respx.get(f"{collector.whoop_client.base_url}/developer/v2/cycle").mock(
                     return_value=httpx.Response(200, json=mock_whoop_cycle_response)
                 )
+                respx.get(f"{collector.whoop_client.base_url}/developer/v2/user/measurement/body").mock(
+                    return_value=httpx.Response(200, json=mock_whoop_body_measurement)
+                )
 
                 # Mock database contexts for all services
                 with patch("src.services.sleep_service.get_db_context") as mock_sleep:
                     with patch("src.services.recovery_service.get_db_context") as mock_recovery:
                         with patch("src.services.workout_service.get_db_context") as mock_workout:
-                            with patch("src.services.cycle_service.get_db_context") as mock_cycle:
-                                for mock_ctx in [mock_sleep, mock_recovery, mock_workout, mock_cycle]:
+                            with patch("src.services.cycle_service.get_db_context") as mock_cycle, \
+                                 patch("src.services.body_measurement_service.get_db_context") as mock_body:
+                                for mock_ctx in [mock_sleep, mock_recovery, mock_workout, mock_cycle, mock_body]:
                                     mock_ctx.return_value.__enter__.return_value = db_session
                                     mock_ctx.return_value.__exit__.return_value = None
 
                                 # Perform full sync
                                 results = await collector.sync_all_data()
 
-                                assert results["total_records"] == 4
+                                assert results["total_records"] == 5
                                 assert results["total_errors"] == 0
                                 assert results["results"]["sleep"]["status"] == "success"
                                 assert results["results"]["recovery"]["status"] == "success"
                                 assert results["results"]["workout"]["status"] == "success"
                                 assert results["results"]["cycle"]["status"] == "success"
+                                assert results["results"]["body_measurement"]["status"] == "success"
 
                                 # Verify all records in database
                                 assert db_session.query(SleepRecord).count() == 1
                                 assert db_session.query(RecoveryRecord).count() == 1
                                 assert db_session.query(WorkoutRecord).count() == 1
                                 assert db_session.query(CycleRecord).count() == 1
+                                assert db_session.query(BodyMeasurement).count() == 1
 
     @respx.mock
     async def test_incremental_sync(

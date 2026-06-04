@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Optional, Dict, Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 
 from src.api.whoop_client import WhoopClient, WhoopAPIError
 from src.models.db_models import BodyMeasurement, SyncStatus
@@ -139,7 +140,7 @@ class BodyMeasurementService:
                 latest = db.execute(stmt).scalars().first()
 
                 if self._is_changed(latest, candidate):
-                    db.add(BodyMeasurement(recorded_at=now, **candidate))
+                    db.execute(insert(BodyMeasurement).values(recorded_at=now, **candidate))
                     inserted = 1
                     logger.info(
                         "Inserted body measurement snapshot",
