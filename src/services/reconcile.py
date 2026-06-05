@@ -30,6 +30,15 @@ from src.utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Normalize a datetime to tz-aware UTC so window comparisons are safe."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def windowed_start(
     last_record_time: Optional[datetime],
     window_days: Optional[int] = None,
@@ -63,6 +72,8 @@ def reconcile_deletes(
     present_keys: Set[Any],
     window_days: Optional[int] = None,
     settle_margin: Optional[timedelta] = None,
+    fetch_start: Optional[datetime] = None,
+    fetch_end: Optional[datetime] = None,
     skip_score_states: Iterable[str] = ("PENDING_SCORE",),
 ) -> int:
     """Delete local rows in the reconcile window the API no longer returns.
@@ -73,8 +84,10 @@ def reconcile_deletes(
     A row is deleted only when ALL of the following hold, so we never drop a
     record that is merely settling or sitting just outside the fetched window:
 
-      * its natural key is absent from ``present_keys`` (what the API returned);
-      * its ``time_column`` is within ``[now - window, now - settle_margin]``;
+      * its natural key is non-null and absent from ``present_keys``;
+      * its ``time_column`` is within ``[now - window, now - settle_margin]``,
+        further clamped to the actually-fetched ``[fetch_start, fetch_end]`` so a
+        bounded/backfill fetch is never treated as authoritative beyond its range;
       * its ``score_state`` (if the model has one) is not still pending.
 
     Args:
@@ -86,6 +99,10 @@ def reconcile_deletes(
         present_keys: Keys present in the API response for this poll.
         window_days: Override the configured window (mainly for tests).
         settle_margin: Override the configured settle margin (mainly for tests).
+        fetch_start: Lower bound actually sent to the API (the windowed start).
+            Rows below it weren't requested, so the window is clamped up to it.
+        fetch_end: Upper bound actually sent to the API, if any. Rows above it
+            weren't requested, so the cutoff is clamped down to it.
         skip_score_states: score_state values that keep a row regardless.
 
     Returns:
@@ -97,6 +114,18 @@ def reconcile_deletes(
     if settle_margin is None:
         settle_margin = timedelta(minutes=settings.reconcile_settle_minutes)
     cutoff = now - settle_margin
+
+    # Clamp the reconcile window to what was actually fetched. Without this, an
+    # explicit `end` (or a `start` newer than the default window) would let us
+    # delete rows in a range the API was never asked about.
+    fetch_start = _as_utc(fetch_start)
+    fetch_end = _as_utc(fetch_end)
+    if fetch_start is not None and fetch_start > window_start:
+        window_start = fetch_start
+    if fetch_end is not None and fetch_end < cutoff:
+        cutoff = fetch_end
+    if window_start > cutoff:
+        return 0
 
     stmt = select(model).where(
         model.user_id == user_id,
@@ -112,7 +141,10 @@ def reconcile_deletes(
     for row in db.execute(stmt).scalars():
         if has_score_state and row.score_state in skip:
             continue
-        if getattr(row, key_attr) in present_keys:
+        key_value = getattr(row, key_attr)
+        # A null natural key can never match the API response, so it would always
+        # look "deleted". Keep it rather than dropping a row we can't reconcile.
+        if key_value is None or key_value in present_keys:
             continue
         to_delete.append(row.id)
 

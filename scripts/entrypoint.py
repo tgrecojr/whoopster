@@ -12,6 +12,7 @@ from alembic import command
 from alembic.config import Config
 
 from src.main import main as app_main
+from src.utils.logging_config import configure_logging
 
 
 def run_migrations() -> None:
@@ -20,6 +21,9 @@ def run_migrations() -> None:
 
 
 if __name__ == "__main__":
+    # Configure structured logging before anything emits log lines so migration
+    # and app output share one format and the third-party level overrides apply.
+    configure_logging()
     run_migrations()
     try:
         asyncio.run(app_main())

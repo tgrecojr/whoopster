@@ -5,12 +5,11 @@ transforming them to database models, and performing upsert operations.
 """
 
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
 
 from src.api.whoop_client import WhoopClient
 from src.models.db_models import RecoveryRecord, SyncStatus
@@ -135,11 +134,13 @@ class RecoveryService:
 
             if not api_records:
                 logger.info("No recovery records to sync", user_id=self.user_id)
+                # Leave the watermark untouched on an empty fetch (see sleep
+                # service): writing the backdated `start` would regress it.
                 self._update_sync_status(
                     status="success",
                     records_fetched=0,
                     last_sync_time=datetime.now(timezone.utc),
-                    last_record_time=start,
+                    last_record_time=None,
                 )
                 return 0
 
@@ -149,12 +150,11 @@ class RecoveryService:
             with get_db_context() as db:
                 for idx, api_record in enumerate(api_records):
                     try:
-                        # Log first record for debugging
+                        # Log only field names (no health values/PII) at debug.
                         if idx == 0:
-                            logger.info(
-                                "Sample recovery API record",
+                            logger.debug(
+                                "Recovery API record fields",
                                 api_record_keys=list(api_record.keys()),
-                                sample_data=api_record,
                             )
 
                         # Transform API record to database format
@@ -210,6 +210,8 @@ class RecoveryService:
                     time_column=RecoveryRecord.created_at_whoop,
                     key_column=RecoveryRecord.cycle_id,
                     present_keys=present_keys,
+                    fetch_start=start,
+                    fetch_end=end,
                 )
 
                 # Get most recent record time for next sync

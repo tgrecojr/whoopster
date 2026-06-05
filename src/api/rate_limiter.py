@@ -41,8 +41,14 @@ class RateLimiter:
             max_requests_per_minute: Maximum requests per minute (from settings if None)
             safety_margin: Multiplier for max requests (0.9 = 90% of limit for safety)
         """
-        self.max_requests = int(
-            (max_requests_per_minute or settings.max_requests_per_minute) * safety_margin
+        # Guard against a config that floors to 0, which would make acquire()
+        # loop forever and get_stats() divide by zero.
+        self.max_requests = max(
+            1,
+            int(
+                (max_requests_per_minute or settings.max_requests_per_minute)
+                * safety_margin
+            ),
         )
         self.window_seconds = 60  # 1 minute window
         self.requests: deque[datetime] = deque()
@@ -64,51 +70,47 @@ class RateLimiter:
 
         This method should be called before every API request.
         """
-        async with self.lock:
-            now = datetime.now(timezone.utc)
+        # Loop so that after waiting we re-check capacity under the lock before
+        # recording. A single `if` would let several woken coroutines all append
+        # at once and overshoot max_requests.
+        while True:
+            async with self.lock:
+                now = datetime.now(timezone.utc)
 
-            # Remove timestamps outside the current window
-            self._cleanup_old_requests(now)
+                # Remove timestamps outside the current window
+                self._cleanup_old_requests(now)
 
-            # Check if we're at the limit
-            if len(self.requests) >= self.max_requests:
-                # Calculate how long to wait
-                oldest_request = self.requests[0]
-                window_start = now - timedelta(seconds=self.window_seconds)
+                if len(self.requests) < self.max_requests:
+                    # A slot is free: record it while still holding the lock so
+                    # no other coroutine can claim the same slot.
+                    self.requests.append(now)
 
-                if oldest_request > window_start:
-                    # We're at the limit, need to wait
-                    wait_time = (
-                        oldest_request - window_start
-                    ).total_seconds() + 0.1  # Add small buffer
-
-                    logger.warning(
-                        "Rate limit reached, waiting",
-                        wait_seconds=wait_time,
+                    logger.debug(
+                        "Rate limit acquired",
                         requests_in_window=len(self.requests),
                         max_requests=self.max_requests,
+                        utilization_percent=(len(self.requests) / self.max_requests)
+                        * 100,
                     )
+                    return
 
-                    # Release lock while waiting
-                    self.lock.release()
-                    try:
-                        await asyncio.sleep(wait_time)
-                    finally:
-                        await self.lock.acquire()
+                # At the limit: compute how long until the oldest request leaves
+                # the window, then release the lock (by exiting the `with`) and
+                # wait before retrying.
+                oldest_request = self.requests[0]
+                window_start = now - timedelta(seconds=self.window_seconds)
+                wait_time = (oldest_request - window_start).total_seconds() + 0.1
 
-                    # Re-clean after waiting
-                    now = datetime.now(timezone.utc)
-                    self._cleanup_old_requests(now)
+                logger.warning(
+                    "Rate limit reached, waiting",
+                    wait_seconds=wait_time,
+                    requests_in_window=len(self.requests),
+                    max_requests=self.max_requests,
+                )
 
-            # Record this request
-            self.requests.append(now)
-
-            logger.debug(
-                "Rate limit acquired",
-                requests_in_window=len(self.requests),
-                max_requests=self.max_requests,
-                utilization_percent=(len(self.requests) / self.max_requests) * 100,
-            )
+            # Lock released here. Sleep outside the lock so other coroutines can
+            # make progress, then loop to re-acquire and re-check.
+            await asyncio.sleep(max(wait_time, 0))
 
     def _cleanup_old_requests(self, now: datetime) -> None:
         """

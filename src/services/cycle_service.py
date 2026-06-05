@@ -5,12 +5,10 @@ transforming them to database models, and performing upsert operations.
 """
 
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
-from uuid import UUID
+from typing import Optional, Dict, Any
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
 
 from src.api.whoop_client import WhoopClient
 from src.models.db_models import CycleRecord, SyncStatus
@@ -140,11 +138,13 @@ class CycleService:
 
             if not api_records:
                 logger.info("No cycle records to sync", user_id=self.user_id)
+                # Leave the watermark untouched on an empty fetch (see sleep
+                # service): writing the backdated `start` would regress it.
                 self._update_sync_status(
                     status="success",
                     records_fetched=0,
                     last_sync_time=datetime.now(timezone.utc),
-                    last_record_time=start,
+                    last_record_time=None,
                 )
                 return 0
 
@@ -203,6 +203,8 @@ class CycleService:
                     time_column=CycleRecord.end_time,
                     key_column=CycleRecord.whoop_cycle_id,
                     present_keys=present_keys,
+                    fetch_start=start,
+                    fetch_end=end,
                 )
 
                 # Get most recent record time for next sync (from completed cycles only)
@@ -218,7 +220,10 @@ class CycleService:
                         latest_record["end"].replace("Z", "+00:00")
                     )
                 else:
-                    latest_time = start or datetime.now(timezone.utc)
+                    # Only ongoing cycles this poll: don't move the watermark
+                    # (None leaves it unchanged), rather than regressing to the
+                    # backdated overlap `start`.
+                    latest_time = None
 
             # Update sync status
             self._update_sync_status(

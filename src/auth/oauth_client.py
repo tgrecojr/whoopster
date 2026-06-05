@@ -5,7 +5,6 @@ for secure authentication with the Whoop API.
 """
 
 import secrets
-import hashlib
 import base64
 from typing import Optional, Dict, Any
 from urllib.parse import urlencode
@@ -188,11 +187,12 @@ class WhoopOAuthClient:
                 return token_data
 
         except httpx.HTTPStatusError as e:
+            # Log status only. The response body and exc_info (which carries the
+            # request, including client_secret/code/code_verifier) are withheld
+            # to avoid leaking secrets into logs.
             logger.error(
                 "Token exchange failed",
                 status_code=e.response.status_code,
-                error=e.response.text,
-                exc_info=True,
             )
             raise
         except Exception as e:
@@ -252,11 +252,12 @@ class WhoopOAuthClient:
                 return token_data
 
         except httpx.HTTPStatusError as e:
+            # Log status only. The response body and exc_info (which carries the
+            # request, including client_secret/refresh_token) are withheld to
+            # avoid leaking secrets into logs.
             logger.error(
                 "Token refresh failed",
                 status_code=e.response.status_code,
-                error=e.response.text,
-                exc_info=True,
             )
             raise
         except Exception as e:
