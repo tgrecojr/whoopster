@@ -1,6 +1,5 @@
 """Application configuration using Pydantic Settings."""
 
-import os
 import sys
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -68,6 +67,15 @@ class Settings(BaseSettings):
     # Rate Limiting
     max_requests_per_minute: int = 60
 
+    # Database connection pool (QueuePool). Each app instance keeps its own pool
+    # (no external PgBouncer). pool_pre_ping is always on so a DB restart or idle
+    # timeout is recovered transparently instead of erroring mid-query. Defaults
+    # suit a single/low-user deployment; bump for horizontal scaling (see
+    # docs/DEPLOYMENT.md).
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_recycle_seconds: int = 1800
+
     # Security Configuration
     token_encryption_key: str  # Required: Fernet encryption key for OAuth tokens
 
@@ -129,7 +137,7 @@ def _initialize_settings() -> Settings:
                 error_lines.append(f"  - {item['field']}: {item['error']}")
 
         error_lines.extend([
-            f"\nPlease set these environment variables in your .env file or Docker environment.",
+            "\nPlease set these environment variables in your .env file or Docker environment.",
             f"For local development, create .env at: {ENV_FILE}",
             f"You can use .env.example as a template: {PROJECT_ROOT / '.env.example'}",
             "",
