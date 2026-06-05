@@ -12,9 +12,10 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from src.api.whoop_client import WhoopClient
-from src.models.db_models import SleepRecord, RecoveryRecord, CycleRecord
+from src.models.db_models import SleepRecord, RecoveryRecord, CycleRecord, SyncStatus
 from src.services.recovery_service import RecoveryService
 from src.services.cycle_service import CycleService
+from src.services.sleep_service import SleepService
 from src.services.reconcile import windowed_start, reconcile_deletes
 
 
@@ -132,6 +133,120 @@ class TestReconcileDeletes:
 
         assert deleted == 0
         assert db_session.query(SleepRecord).count() == 1
+
+    def test_keeps_row_with_null_natural_key(self, db_session, test_user):
+        # A recovery whose cycle_id is NULL can never match present_keys, so it
+        # would always look "deleted". It must be kept, not dropped.
+        now = datetime.now(timezone.utc)
+        rec = RecoveryRecord(
+            id=uuid4(),
+            user_id=test_user.id,
+            cycle_id=None,
+            created_at_whoop=now - timedelta(days=2),
+            score_state="SCORED",
+            raw_data={},
+        )
+        db_session.add(rec)
+        db_session.commit()
+
+        deleted = reconcile_deletes(
+            db_session,
+            RecoveryRecord,
+            user_id=test_user.id,
+            time_column=RecoveryRecord.created_at_whoop,
+            key_column=RecoveryRecord.cycle_id,
+            present_keys=set(),  # API returned nothing for this key
+        )
+        db_session.commit()
+
+        assert deleted == 0
+        assert db_session.query(RecoveryRecord).count() == 1
+
+    def test_fetch_end_clamps_window_above_fetched_range(self, db_session, test_user):
+        # A bounded fetch (end = now-2d) never asked about a row at now-1d, so
+        # that row must not be deleted even though it's absent from present_keys.
+        now = datetime.now(timezone.utc)
+        recent = _make_sleep(db_session, test_user, end=now - timedelta(days=1))
+
+        deleted = reconcile_deletes(
+            db_session,
+            SleepRecord,
+            user_id=test_user.id,
+            time_column=SleepRecord.end_time,
+            key_column=SleepRecord.id,
+            present_keys=set(),
+            fetch_end=now - timedelta(days=2),
+        )
+        db_session.commit()
+
+        assert deleted == 0
+        assert recent.id in {r.id for r in db_session.query(SleepRecord).all()}
+
+    def test_fetch_start_clamps_window_below_fetched_range(self, db_session, test_user):
+        # A fetch that only started at now-2d never asked about a row at now-5d
+        # (inside the default 7d window), so that row must not be deleted.
+        now = datetime.now(timezone.utc)
+        old = _make_sleep(db_session, test_user, end=now - timedelta(days=5))
+
+        deleted = reconcile_deletes(
+            db_session,
+            SleepRecord,
+            user_id=test_user.id,
+            time_column=SleepRecord.end_time,
+            key_column=SleepRecord.id,
+            present_keys=set(),
+            fetch_start=now - timedelta(days=2),
+        )
+        db_session.commit()
+
+        assert deleted == 0
+        assert old.id in {r.id for r in db_session.query(SleepRecord).all()}
+
+
+# ============================================================================
+# Empty-fetch must not regress the watermark
+# ============================================================================
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestEmptyFetchWatermark:
+    async def test_empty_fetch_leaves_watermark_unchanged(self, test_user, db_session):
+        # Seed a known watermark, then sync an empty API response. The watermark
+        # must stay put — not regress by the overlap window (the old bug wrote
+        # the backdated `start`, walking it 7 days into the past every poll).
+        watermark = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        db_session.add(
+            SyncStatus(
+                user_id=test_user.id,
+                data_type="sleep",
+                status="success",
+                last_record_time=watermark,
+                records_fetched=1,
+            )
+        )
+        db_session.commit()
+
+        client = WhoopClient(user_id=test_user.id)
+        service = SleepService(user_id=test_user.id, whoop_client=client)
+
+        with patch.object(
+            client, "get_sleep_records", new=AsyncMock(return_value=[])
+        ):
+            with patch("src.services.sleep_service.get_db_context") as mock_ctx:
+                mock_ctx.return_value.__enter__.return_value = db_session
+                mock_ctx.return_value.__exit__ = _commit_on_exit(db_session)
+
+                await service.sync_sleep_records()
+
+        ss = (
+            db_session.query(SyncStatus)
+            .filter_by(user_id=test_user.id, data_type="sleep")
+            .one()
+        )
+        got = ss.last_record_time
+        if got.tzinfo is None:  # SQLite may strip tzinfo
+            got = got.replace(tzinfo=timezone.utc)
+        assert got == watermark
 
 
 # ============================================================================

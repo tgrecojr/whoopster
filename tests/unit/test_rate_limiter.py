@@ -2,9 +2,23 @@
 
 import pytest
 import asyncio
+from collections import deque
 from datetime import datetime, timezone, timedelta
 
-from src.api.rate_limiter import RateLimiter, RateLimitExceeded
+from src.api.rate_limiter import RateLimiter
+
+
+class _PeakDeque(deque):
+    """A deque that records the maximum length ever reached."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.peak = 0
+
+    def append(self, item):
+        super().append(item)
+        if len(self) > self.peak:
+            self.peak = len(self)
 
 
 @pytest.mark.unit
@@ -136,6 +150,35 @@ class TestRateLimiter:
 
         stats = await limiter.get_stats()
         assert stats["requests_in_window"] == 15
+
+    async def test_never_overshoots_max_under_concurrency(self):
+        """Concurrent acquirers must never push the window past max_requests.
+
+        The old code used an `if` (not a loop) and released/re-acquired the lock
+        by hand, so several waiters could wake and all append at once, exceeding
+        the limit. With a short window this reproduces quickly; the recorded
+        peak length must stay within max_requests.
+        """
+        limiter = RateLimiter(max_requests_per_minute=2, safety_margin=1.0)
+        assert limiter.max_requests == 2
+        limiter.window_seconds = 1  # shrink the window so waits are sub-second
+        limiter.requests = _PeakDeque()
+
+        now = datetime.now(timezone.utc)
+        # Fill to the limit with entries that are still inside the 1s window.
+        limiter.requests.append(now - timedelta(seconds=0.9))
+        limiter.requests.append(now - timedelta(seconds=0.1))
+
+        # Three concurrent acquirers contend for slots as the old entries expire.
+        await asyncio.gather(*[limiter.acquire() for _ in range(3)])
+
+        assert limiter.requests.peak <= limiter.max_requests
+        assert len(limiter.requests) <= limiter.max_requests
+
+    async def test_max_requests_floors_to_at_least_one(self):
+        """A tiny config must not floor max_requests to 0 (infinite loop / div0)."""
+        limiter = RateLimiter(max_requests_per_minute=1, safety_margin=0.1)
+        assert limiter.max_requests == 1  # int(0.1) == 0, clamped up to 1
 
     async def test_custom_safety_margin(self):
         """Test custom safety margin."""

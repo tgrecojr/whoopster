@@ -7,12 +7,11 @@ the scheduler for periodic data synchronization.
 import asyncio
 import signal
 import sys
-from typing import Optional
 
 from src.config import settings
 from src.database.init_db import init_database
-from src.scheduler.job_scheduler import initialize_scheduler, get_scheduler
-from src.utils.logging_config import get_logger
+from src.scheduler.job_scheduler import initialize_scheduler
+from src.utils.logging_config import configure_logging, get_logger
 
 logger = get_logger(__name__)
 
@@ -145,6 +144,10 @@ async def main() -> None:
 
     Creates and runs the application.
     """
+    # Idempotent: also called in scripts/entrypoint.py before migrations. Ensures
+    # logging is configured for `python -m src.main` and any other caller path.
+    configure_logging()
+
     logger.info(
         "Whoopster starting",
         version="1.0.0",

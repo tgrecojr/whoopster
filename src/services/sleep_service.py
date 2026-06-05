@@ -5,12 +5,11 @@ transforming them to database models, and performing upsert operations.
 """
 
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
 
 from src.api.whoop_client import WhoopClient
 from src.models.db_models import SleepRecord, SyncStatus
@@ -150,11 +149,14 @@ class SleepService:
 
             if not api_records:
                 logger.info("No sleep records to sync", user_id=self.user_id)
+                # Leave the watermark untouched on an empty fetch. Writing the
+                # backdated overlap `start` here would walk the watermark 7 days
+                # into the past on every empty poll.
                 self._update_sync_status(
                     status="success",
                     records_fetched=0,
                     last_sync_time=datetime.now(timezone.utc),
-                    last_record_time=start,
+                    last_record_time=None,
                 )
                 return 0
 
@@ -201,6 +203,8 @@ class SleepService:
                     time_column=SleepRecord.end_time,
                     key_column=SleepRecord.id,
                     present_keys=present_keys,
+                    fetch_start=start,
+                    fetch_end=end,
                 )
 
                 # Get most recent record time for next sync

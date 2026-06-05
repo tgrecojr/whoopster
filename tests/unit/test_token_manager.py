@@ -1,5 +1,7 @@
 """Tests for token manager."""
 
+import asyncio
+
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, patch
@@ -144,6 +146,87 @@ class TestTokenManagerAsync:
             # Check database was updated with encrypted token
             db_session.refresh(near_expiry_token)
             assert encryption.decrypt(near_expiry_token.access_token) == "new_access"
+
+    async def test_concurrent_refresh_happens_once(self, db_session, test_user):
+        """Concurrent near-expiry callers must trigger exactly one refresh.
+
+        Whoop rotates the refresh token, so a second concurrent refresh would
+        present a consumed token. The per-user lock + double-check must collapse
+        N concurrent callers into a single refresh, with the rest reusing it.
+        """
+        manager = TokenManager()
+        encryption = get_token_encryption()
+
+        near_expiry_token = OAuthToken(
+            user_id=test_user.id,
+            access_token=encryption.encrypt("old_access"),
+            refresh_token=encryption.encrypt("old_refresh"),
+            token_type="Bearer",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=2),
+            scopes=["read:sleep"],
+        )
+        db_session.add(near_expiry_token)
+        db_session.commit()
+
+        calls = {"count": 0}
+
+        async def fake_refresh(refresh_token: str) -> dict:
+            calls["count"] += 1
+            # Yield so other queued callers reach the lock while we're refreshing.
+            await asyncio.sleep(0.01)
+            return {
+                "access_token": "new_access",
+                "refresh_token": "new_refresh",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+
+        with patch.object(
+            manager.oauth_client, "refresh_access_token", side_effect=fake_refresh
+        ):
+            results = await asyncio.gather(
+                *[
+                    manager.get_valid_token(test_user.id, db=db_session)
+                    for _ in range(5)
+                ]
+            )
+
+        assert calls["count"] == 1  # exactly one refresh despite 5 callers
+        assert all(token == "new_access" for token in results)
+        db_session.refresh(near_expiry_token)
+        assert encryption.decrypt(near_expiry_token.refresh_token) == "new_refresh"
+
+    async def test_refresh_rejects_malformed_response(self, db_session, test_user):
+        """A refresh response missing required fields must not half-update state."""
+        manager = TokenManager()
+        encryption = get_token_encryption()
+
+        near_expiry_token = OAuthToken(
+            user_id=test_user.id,
+            access_token=encryption.encrypt("old_access"),
+            refresh_token=encryption.encrypt("old_refresh"),
+            token_type="Bearer",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=2),
+            scopes=["read:sleep"],
+        )
+        db_session.add(near_expiry_token)
+        db_session.commit()
+
+        # Missing expires_in -> must raise before mutating the stored token.
+        bad_response = {"access_token": "new_access", "token_type": "Bearer"}
+
+        with patch.object(
+            manager.oauth_client,
+            "refresh_access_token",
+            new=AsyncMock(return_value=bad_response),
+        ):
+            with pytest.raises(ValueError):
+                await manager.get_valid_token(test_user.id, db=db_session)
+
+        db_session.refresh(near_expiry_token)
+        # Old token untouched.
+        assert encryption.decrypt(near_expiry_token.access_token) == "old_access"
+        assert encryption.decrypt(near_expiry_token.refresh_token) == "old_refresh"
 
     async def test_is_token_valid_true(self, db_session, test_user, test_oauth_token):
         """Test checking if token is valid."""

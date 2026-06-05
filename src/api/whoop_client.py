@@ -5,10 +5,8 @@ supporting sleep, workout, recovery, and cycle data with pagination,
 rate limiting, and automatic token refresh.
 """
 
-import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, List, Dict, Any, AsyncIterator
-from urllib.parse import urlencode
 
 import httpx
 from tenacity import (
@@ -32,6 +30,45 @@ class WhoopAPIError(Exception):
     def __init__(self, message: str, status_code: Optional[int] = None):
         self.status_code = status_code
         super().__init__(message)
+
+
+class WhoopRetryableError(WhoopAPIError):
+    """A transient API error (429 / 5xx) that should be retried."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: Optional[int] = None,
+        retry_after: Optional[float] = None,
+    ):
+        super().__init__(message, status_code)
+        self.retry_after = retry_after
+
+
+# HTTP statuses worth retrying: rate limiting and transient server errors.
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
+# Fallback backoff when the server doesn't tell us how long to wait.
+_EXP_WAIT = wait_exponential(multiplier=1, min=2, max=10)
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """Parse a Retry-After header (delta-seconds form). HTTP-date form -> None."""
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        # HTTP-date form is not handled; caller falls back to exponential backoff.
+        return None
+
+
+def _whoop_retry_wait(retry_state) -> float:
+    """Honor a server-provided Retry-After, else exponential backoff."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, WhoopRetryableError) and exc.retry_after is not None:
+        return min(exc.retry_after, 60.0)  # cap to avoid pathologically long waits
+    return _EXP_WAIT(retry_state)
 
 
 class WhoopClient:
@@ -70,12 +107,38 @@ class WhoopClient:
         self.rate_limiter = rate_limiter or RateLimiter()
         self.base_url = settings.whoop_api_base_url
         self.timeout = timeout
+        # Lazily-created, reused across requests for connection pooling/keep-alive.
+        # Closed via aclose() (or the async context manager).
+        self._client: Optional[httpx.AsyncClient] = None
 
         logger.info(
             "Whoop client initialized",
             user_id=user_id,
             base_url=self.base_url,
         )
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return the shared AsyncClient, creating it on first use."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=httpx.Limits(
+                    max_connections=10, max_keepalive_connections=5
+                ),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP client and release pooled connections."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
+
+    async def __aenter__(self) -> "WhoopClient":
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        await self.aclose()
 
     async def _get_headers(self) -> Dict[str, str]:
         """
@@ -99,8 +162,10 @@ class WhoopClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
+        wait=_whoop_retry_wait,
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.NetworkError, WhoopRetryableError)
+        ),
         reraise=True,
     )
     async def _make_request(
@@ -136,30 +201,46 @@ class WhoopClient:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(url, headers=headers, params=params)
-                response.raise_for_status()
+            client = self._get_client()
+            response = await client.get(url, headers=headers, params=params)
+            response.raise_for_status()
 
-                data = response.json()
+            data = response.json()
 
-                logger.debug(
-                    "API request successful",
-                    endpoint=endpoint,
-                    status_code=response.status_code,
-                )
+            logger.debug(
+                "API request successful",
+                endpoint=endpoint,
+                status_code=response.status_code,
+            )
 
-                return data
+            return data
 
         except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            # Log status only — never the response body, which can echo request
+            # context / sensitive data.
+            if status_code in _RETRYABLE_STATUS_CODES:
+                retry_after = _parse_retry_after(e.response.headers.get("Retry-After"))
+                logger.warning(
+                    "Retryable API error, will retry",
+                    endpoint=endpoint,
+                    status_code=status_code,
+                    retry_after=retry_after,
+                )
+                raise WhoopRetryableError(
+                    f"Retryable API error (status {status_code})",
+                    status_code=status_code,
+                    retry_after=retry_after,
+                )
+
             logger.error(
                 "API request failed",
                 endpoint=endpoint,
-                status_code=e.response.status_code,
-                error=e.response.text,
+                status_code=status_code,
             )
             raise WhoopAPIError(
-                f"API request failed: {e.response.text}",
-                status_code=e.response.status_code,
+                f"API request failed with status {status_code}",
+                status_code=status_code,
             )
         except (httpx.TimeoutException, httpx.NetworkError) as e:
             logger.warning(

@@ -342,4 +342,8 @@ async def sync_user_data(user_id: int) -> Dict[str, Any]:
         Sync results dictionary
     """
     collector = DataCollector(user_id)
-    return await collector.sync_all_data()
+    try:
+        return await collector.sync_all_data()
+    finally:
+        # Release pooled HTTP connections held for this sync run.
+        await collector.whoop_client.aclose()

@@ -117,6 +117,93 @@ class TestWhoopClientAsync:
                     await client._make_request("/test")
 
     @respx.mock
+    async def test_make_request_error_message_excludes_body(self, test_user):
+        """Non-retryable error must not leak the response body into the message."""
+        client = WhoopClient(user_id=test_user.id)
+
+        with patch.object(
+            client.token_manager,
+            "get_valid_token",
+            new=AsyncMock(return_value="test_token"),
+        ):
+            with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
+                respx.get(f"{client.base_url}/test").mock(
+                    return_value=httpx.Response(
+                        404, json={"secret_detail": "do-not-log-me"}
+                    )
+                )
+
+                with pytest.raises(WhoopAPIError) as exc_info:
+                    await client._make_request("/test")
+
+                assert "do-not-log-me" not in str(exc_info.value)
+                assert exc_info.value.status_code == 404
+
+        await client.aclose()
+
+    @respx.mock
+    async def test_make_request_retries_on_429(self, test_user):
+        """A 429 must be retried (honoring Retry-After) and then succeed."""
+        client = WhoopClient(user_id=test_user.id)
+
+        with patch.object(
+            client.token_manager,
+            "get_valid_token",
+            new=AsyncMock(return_value="test_token"),
+        ):
+            with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
+                route = respx.get(f"{client.base_url}/test")
+                route.side_effect = [
+                    httpx.Response(429, headers={"Retry-After": "0"}, json={}),
+                    httpx.Response(200, json={"ok": True}),
+                ]
+
+                result = await client._make_request("/test")
+
+                assert result == {"ok": True}
+                assert route.call_count == 2
+
+        await client.aclose()
+
+    @respx.mock
+    async def test_make_request_gives_up_after_retries(self, test_user):
+        """A persistent 503 is retried up to the attempt cap, then raised."""
+        client = WhoopClient(user_id=test_user.id)
+
+        with patch.object(
+            client.token_manager,
+            "get_valid_token",
+            new=AsyncMock(return_value="test_token"),
+        ):
+            with patch.object(client.rate_limiter, "acquire", new=AsyncMock()):
+                respx.get(f"{client.base_url}/test").mock(
+                    return_value=httpx.Response(503, headers={"Retry-After": "0"}, json={})
+                )
+
+                with pytest.raises(WhoopAPIError):
+                    await client._make_request("/test")
+
+                assert respx.calls.call_count == 3  # stop_after_attempt(3)
+
+        await client.aclose()
+
+    async def test_http_client_is_reused_and_closeable(self, test_user):
+        """The pooled AsyncClient is reused across calls and recreated after close."""
+        client = WhoopClient(user_id=test_user.id)
+
+        c1 = client._get_client()
+        c2 = client._get_client()
+        assert c1 is c2  # reused, not recreated per request
+        assert not c1.is_closed
+
+        await client.aclose()
+        assert c1.is_closed
+
+        c3 = client._get_client()
+        assert c3 is not c1  # a fresh client after close
+        await client.aclose()
+
+    @respx.mock
     async def test_get_sleep_records(self, test_user, mock_whoop_sleep_response):
         """Test fetching sleep records."""
         client = WhoopClient(user_id=test_user.id)

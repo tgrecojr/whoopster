@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool
 
@@ -96,7 +96,8 @@ def check_connection() -> bool:
     """
     try:
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            # SQLAlchemy 2.0 requires an executable clause, not a bare string.
+            conn.execute(text("SELECT 1"))
         logger.info("Database connection successful")
         return True
     except Exception as e:
