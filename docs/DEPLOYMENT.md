@@ -646,12 +646,23 @@ For multiple users or higher sync frequency:
 
 **Database Connection Pooling:**
 
+The app uses a bounded SQLAlchemy `QueuePool` with `pool_pre_ping` enabled. The
+defaults suit a single/low-user deployment:
+
 ```python
-# src/config.py
-class Settings(BaseSettings):
-    # ...
-    db_pool_size: int = 20
-    db_max_overflow: int = 40
+# src/config.py defaults
+db_pool_size: int = 5
+db_max_overflow: int = 10
+db_pool_recycle_seconds: int = 1800
+```
+
+For multiple users or higher sync frequency, raise the pool size/overflow via
+environment variables (each app instance keeps its own pool — there is no
+external PgBouncer):
+
+```bash
+DB_POOL_SIZE=20
+DB_MAX_OVERFLOW=40
 ```
 
 **Multiple App Instances:**

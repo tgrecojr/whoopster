@@ -2,8 +2,10 @@
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.pool import QueuePool
 
 import src.database.session as session_module
+from src.config import settings
 
 
 @pytest.mark.unit
@@ -27,3 +29,19 @@ def test_check_connection_failure_returns_false(monkeypatch):
     monkeypatch.setattr(session_module, "engine", bad_engine)
 
     assert session_module.check_connection() is False
+
+
+@pytest.mark.unit
+def test_engine_uses_bounded_pool_with_pre_ping():
+    """The production engine must use a bounded QueuePool with pre-ping on.
+
+    Inspecting the pool does not open a connection, so this is safe without a
+    live database.
+    """
+    pool = session_module.engine.pool
+
+    assert isinstance(pool, QueuePool)
+    assert pool._pre_ping is True
+    assert pool.size() == settings.db_pool_size
+    assert pool._max_overflow == settings.db_max_overflow
+    assert pool._recycle == settings.db_pool_recycle_seconds

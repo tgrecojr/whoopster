@@ -5,18 +5,26 @@ from typing import Generator
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import QueuePool
 
 from src.config import settings
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Create SQLAlchemy engine
-# For production, consider using connection pooling instead of NullPool
+# Create SQLAlchemy engine with a bounded connection pool. The app fans out
+# several concurrent sessions per sync; a pool caps concurrent connections
+# (so a burst can't exhaust Postgres max_connections) and reuses warm
+# connections instead of re-handshaking TLS/auth every session. pool_pre_ping
+# validates a connection before use, so a DB restart / idle timeout is
+# recovered transparently. No external pooler (PgBouncer) is in front.
 engine = create_engine(
     settings.database_url,
-    poolclass=NullPool,  # No connection pooling for simplicity
+    poolclass=QueuePool,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_recycle=settings.db_pool_recycle_seconds,
+    pool_pre_ping=True,
     echo=False,  # Set to True for SQL query logging
     future=True,  # Use SQLAlchemy 2.0 style
 )
