@@ -1,7 +1,5 @@
 """SQLAlchemy database models for Whoopster application."""
 
-from datetime import datetime
-from typing import Optional, List, Any
 import uuid
 import json
 
@@ -468,6 +466,8 @@ class SyncStatus(Base):
         )
 
     __table_args__ = (
-        # Unique constraint: one sync status per user per data type
-        {"schema": None},
+        # One sync status row per user per data type. Backs the on-conflict
+        # upsert in upsert_sync_status() and prevents duplicate rows (which
+        # would make scalar_one_or_none() raise MultipleResultsFound).
+        UniqueConstraint("user_id", "data_type", name="uq_sync_user_datatype"),
     )

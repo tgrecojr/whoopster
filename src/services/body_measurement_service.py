@@ -14,8 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from src.api.whoop_client import WhoopClient, WhoopAPIError
-from src.models.db_models import BodyMeasurement, SyncStatus
+from src.models.db_models import BodyMeasurement
 from src.database.session import get_db_context
+from src.services.sync_status import upsert_sync_status
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -193,45 +194,23 @@ class BodyMeasurementService:
     ) -> None:
         """Update sync status row for the body_measurement data type."""
         with get_db_context() as db:
-            stmt = (
-                select(SyncStatus)
-                .where(SyncStatus.user_id == self.user_id)
-                .where(SyncStatus.data_type == "body_measurement")
-            )
-            sync_status = db.execute(stmt).scalar_one_or_none()
-
-            if sync_status:
-                sync_status.status = status
-                sync_status.last_sync_time = last_sync_time or datetime.now(timezone.utc)
-
-                if records_fetched is not None:
-                    sync_status.records_fetched = records_fetched
-                if last_record_time:
-                    sync_status.last_record_time = last_record_time
-                if error_message:
-                    sync_status.error_message = error_message
-                else:
-                    sync_status.error_message = None
-
-                sync_status.updated_at = datetime.now(timezone.utc)
-            else:
-                sync_status = SyncStatus(
-                    user_id=self.user_id,
-                    data_type="body_measurement",
-                    status=status,
-                    last_sync_time=last_sync_time or datetime.now(timezone.utc),
-                    last_record_time=last_record_time,
-                    records_fetched=records_fetched,
-                    error_message=error_message,
-                )
-                db.add(sync_status)
-
-            logger.debug(
-                "Updated sync status",
+            upsert_sync_status(
+                db,
+                user_id=self.user_id,
                 data_type="body_measurement",
                 status=status,
                 records_fetched=records_fetched,
+                last_sync_time=last_sync_time,
+                last_record_time=last_record_time,
+                error_message=error_message,
             )
+
+        logger.debug(
+            "Updated sync status",
+            data_type="body_measurement",
+            status=status,
+            records_fetched=records_fetched,
+        )
 
     async def get_body_measurement_statistics(self) -> Dict[str, Any]:
         """
