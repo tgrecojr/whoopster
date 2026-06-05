@@ -17,6 +17,7 @@ from sqlalchemy import (
     ARRAY,
     ForeignKey,
     TypeDecorator,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.declarative import declarative_base
@@ -268,6 +269,12 @@ class RecoveryRecord(Base):
             f"recovery_score={self.recovery_score})>"
         )
 
+    # One recovery per (user, Whoop cycle): the natural key the API exposes.
+    # Enables idempotent upsert and reconciliation (the API gives no recovery id).
+    __table_args__ = (
+        UniqueConstraint("user_id", "cycle_id", name="uq_recovery_user_cycle"),
+    )
+
 
 class WorkoutRecord(Base):
     """Workout data records from Whoop API."""
@@ -376,6 +383,14 @@ class CycleRecord(Base):
             f"<CycleRecord(id={self.id}, user_id={self.user_id}, "
             f"strain={self.strain_score})>"
         )
+
+    # One row per (user, Whoop cycle id): the natural key the API exposes.
+    # Enables idempotent upsert and reconciliation (DB id is an auto UUID).
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "whoop_cycle_id", name="uq_cycle_user_whoop_cycle"
+        ),
+    )
 
 
 class BodyMeasurement(Base):

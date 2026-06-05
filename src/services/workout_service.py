@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.api.whoop_client import WhoopClient
 from src.models.db_models import WorkoutRecord, SyncStatus
 from src.database.session import get_db_context
+from src.services.reconcile import windowed_start, reconcile_deletes
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -125,10 +126,12 @@ class WorkoutService:
                 sync_status = db.execute(stmt).scalar_one_or_none()
 
                 if sync_status and sync_status.last_record_time:
-                    start = sync_status.last_record_time
+                    # Re-fetch a trailing overlap window so late rescores upsert.
+                    start = windowed_start(sync_status.last_record_time)
                     logger.info(
-                        "Using last sync time as start",
+                        "Using last sync time as start (overlap window applied)",
                         start=start.isoformat(),
+                        watermark=sync_status.last_record_time.isoformat(),
                     )
 
         try:
@@ -178,6 +181,19 @@ class WorkoutService:
                             exc_info=True,
                         )
                         # Continue with other records
+
+                # Reconcile deletions: drop rows in the window the API no longer
+                # returns (a workout deleted in the Whoop app). Keyed on the stable
+                # workout id. Skipped when api_records is empty (handled above).
+                present_keys = {UUID(r["id"]) for r in api_records if r.get("id")}
+                reconcile_deletes(
+                    db,
+                    WorkoutRecord,
+                    user_id=self.user_id,
+                    time_column=WorkoutRecord.end_time,
+                    key_column=WorkoutRecord.id,
+                    present_keys=present_keys,
+                )
 
                 # Get most recent record time for next sync
                 latest_record = max(

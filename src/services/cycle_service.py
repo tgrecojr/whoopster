@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.api.whoop_client import WhoopClient
 from src.models.db_models import CycleRecord, SyncStatus
 from src.database.session import get_db_context
+from src.services.reconcile import windowed_start, reconcile_deletes
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -122,10 +123,12 @@ class CycleService:
                 sync_status = db.execute(stmt).scalar_one_or_none()
 
                 if sync_status and sync_status.last_record_time:
-                    start = sync_status.last_record_time
+                    # Re-fetch a trailing overlap window so late rescores upsert.
+                    start = windowed_start(sync_status.last_record_time)
                     logger.info(
-                        "Using last sync time as start",
+                        "Using last sync time as start (overlap window applied)",
                         start=start.isoformat(),
+                        watermark=sync_status.last_record_time.isoformat(),
                     )
 
         try:
@@ -162,9 +165,18 @@ class CycleService:
                         # Transform API record to database format
                         db_record = self._transform_api_record(api_record)
 
-                        # Insert record (no natural unique ID from API, so we can't upsert)
-                        # Database will auto-generate UUID for id field
+                        # Upsert on the natural key (user_id, whoop_cycle_id).
+                        # The DB id is an auto-generated UUID, but the Whoop integer
+                        # cycle id is unique per user, so re-fetched/rescored cycles
+                        # update in place instead of inserting duplicates.
                         stmt = insert(CycleRecord).values(**db_record)
+                        stmt = stmt.on_conflict_do_update(
+                            index_elements=["user_id", "whoop_cycle_id"],
+                            set_={
+                                **db_record,
+                                "updated_at": datetime.now(timezone.utc),
+                            },
+                        )
 
                         db.execute(stmt)
                         records_synced += 1
@@ -177,6 +189,21 @@ class CycleService:
                             exc_info=True,
                         )
                         # Continue with other records
+
+                # Reconcile deletions: drop completed cycles in the window the API
+                # no longer returns. Keyed on whoop_cycle_id (DB id is an auto UUID).
+                # Ongoing cycles have no end_time and are excluded by the window.
+                present_keys = {
+                    r.get("id") for r in api_records if r.get("id") is not None
+                }
+                reconcile_deletes(
+                    db,
+                    CycleRecord,
+                    user_id=self.user_id,
+                    time_column=CycleRecord.end_time,
+                    key_column=CycleRecord.whoop_cycle_id,
+                    present_keys=present_keys,
+                )
 
                 # Get most recent record time for next sync (from completed cycles only)
                 completed_records = [r for r in api_records if r.get("end")]

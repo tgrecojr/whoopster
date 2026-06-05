@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.api.whoop_client import WhoopClient
 from src.models.db_models import RecoveryRecord, SyncStatus
 from src.database.session import get_db_context
+from src.services.reconcile import windowed_start, reconcile_deletes
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -117,10 +118,12 @@ class RecoveryService:
                 sync_status = db.execute(stmt).scalar_one_or_none()
 
                 if sync_status and sync_status.last_record_time:
-                    start = sync_status.last_record_time
+                    # Re-fetch a trailing overlap window so late rescores upsert.
+                    start = windowed_start(sync_status.last_record_time)
                     logger.info(
-                        "Using last sync time as start",
+                        "Using last sync time as start (overlap window applied)",
                         start=start.isoformat(),
+                        watermark=sync_status.last_record_time.isoformat(),
                     )
 
         try:
@@ -163,9 +166,19 @@ class RecoveryService:
                             recovery_score=db_record.get("recovery_score"),
                         )
 
-                        # Insert record (no natural unique ID from API, so we can't upsert)
-                        # Database will auto-generate UUID for id field
+                        # Upsert on the natural key (user_id, cycle_id). The API
+                        # gives no recovery id, but recovery is 1:1 with a cycle,
+                        # so re-fetched/rescored recoveries update in place instead
+                        # of inserting duplicates. id is omitted (DB-generated UUID
+                        # is preserved on conflict).
                         stmt = insert(RecoveryRecord).values(**db_record)
+                        stmt = stmt.on_conflict_do_update(
+                            index_elements=["user_id", "cycle_id"],
+                            set_={
+                                **db_record,
+                                "updated_at": datetime.now(timezone.utc),
+                            },
+                        )
 
                         db.execute(stmt)
                         records_synced += 1
@@ -180,6 +193,24 @@ class RecoveryService:
                             exc_info=True,
                         )
                         # Continue with other records
+
+                # Reconcile deletions: drop rows in the window the API no longer
+                # returns (a recovery deleted/rescored-away in the Whoop app).
+                # Keyed on cycle_id (recovery is 1:1 with a cycle; the API gives no
+                # recovery id). Skipped when api_records is empty (handled above).
+                present_keys = {
+                    r.get("cycle_id")
+                    for r in api_records
+                    if r.get("cycle_id") is not None
+                }
+                reconcile_deletes(
+                    db,
+                    RecoveryRecord,
+                    user_id=self.user_id,
+                    time_column=RecoveryRecord.created_at_whoop,
+                    key_column=RecoveryRecord.cycle_id,
+                    present_keys=present_keys,
+                )
 
                 # Get most recent record time for next sync
                 latest_record = max(

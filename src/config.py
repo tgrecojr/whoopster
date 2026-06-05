@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = 15
     environment: str = "development"
 
+    # Reconciliation: each poll re-fetches a trailing window and reconciles it
+    # against the DB, so late rescores and Whoop-side deletions are caught without
+    # webhooks. settle_minutes shields very recent rows from deletion while they
+    # are still settling / paginating in.
+    reconcile_window_days: int = 7
+    reconcile_settle_minutes: int = 60
+
     # Rate Limiting
     max_requests_per_minute: int = 60
 
