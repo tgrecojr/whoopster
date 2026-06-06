@@ -64,6 +64,12 @@ htmlcov/
 *.cover
 .hypothesis/
 
+# Bronze layer captured output -- only relevant if BRONZE_ROOT points inside the
+# repo for local testing; production uses an external path / object store.
+# Root-anchored so it never matches the src/bronze/ source module.
+/data/bronze/
+/bronze/
+
 # Grafana
 grafana/data/
 

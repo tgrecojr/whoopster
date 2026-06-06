@@ -58,6 +58,13 @@ services:
       SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-15}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       MAX_REQUESTS_PER_MINUTE: ${MAX_REQUESTS_PER_MINUTE:-60}
+
+      # Bronze Layer (raw capture) — optional, off by default. Set BRONZE_ROOT
+      # to enable; pair it with a persistent volume mounted at the same path
+      # (see the commented `volumes` block below). See docs/BRONZE.md.
+      BRONZE_ROOT: ${BRONZE_ROOT:-}
+    # volumes:
+    #   - bronze_data:/data/bronze   # mount when BRONZE_ROOT=/data/bronze
     networks:
       - whoopster-network
     healthcheck:
@@ -102,6 +109,9 @@ volumes:
     driver: local
   grafana_data:
     driver: local
+  # Uncomment to persist bronze raw-capture output when BRONZE_ROOT is set.
+  # bronze_data:
+  #   driver: local
 
 networks:
   whoopster-network:

@@ -5,6 +5,7 @@ supporting sleep, workout, recovery, and cycle data with pagination,
 rate limiting, and automatic token refresh.
 """
 
+import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, Any, AsyncIterator
 
@@ -16,12 +17,18 @@ from tenacity import (
     retry_if_exception_type,
 )
 
+from src import __version__
 from src.config import settings
 from src.auth.token_manager import TokenManager
 from src.api.rate_limiter import RateLimiter
+from src.bronze import capture_bronze, is_bronze_enabled
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Bronze provenance: identifies this ingest processor in capture sidecars.
+_BRONZE_SOURCE = "whoop"
+_BRONZE_PROCESSOR = "whoop-ingest"
 
 
 class WhoopAPIError(Exception):
@@ -61,6 +68,21 @@ def _parse_retry_after(value: Optional[str]) -> Optional[float]:
     except (TypeError, ValueError):
         # HTTP-date form is not handled; caller falls back to exponential backoff.
         return None
+
+
+def _is_empty_pagination_terminator(data: Any) -> bool:
+    """True if ``data`` is a paginated response carrying zero records.
+
+    Used to skip capturing the "no more results" terminator page (and genuinely
+    empty result windows) to bronze -- they have no functional value to
+    reprocess. Single-object endpoints (e.g. profile, body measurement) have no
+    ``records`` key and therefore never match, so they are always captured.
+    """
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("records"), list)
+        and len(data["records"]) == 0
+    )
 
 
 def _whoop_retry_wait(retry_state) -> float:
@@ -160,6 +182,53 @@ class WhoopClient:
             "Accept": "application/json",
         }
 
+    async def _capture_bronze(
+        self,
+        response: httpx.Response,
+        collection: str,
+    ) -> None:
+        """Capture a raw Whoop response to the bronze layer (best-effort).
+
+        Stores the exact response bytes (``response.content`` -- already
+        transparently decompressed by httpx, so the stored form is identity)
+        plus a provenance sidecar. Runs the blocking file I/O off the event
+        loop and never raises: ``capture_bronze`` swallows its own errors, and
+        this method guards the dispatch itself so a capture failure can never
+        break normal processing.
+
+        Args:
+            response: The httpx response whose raw bytes to capture.
+            collection: Bronze collection name (e.g. ``"recovery"``).
+        """
+        try:
+            content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
+            meta = {
+                "request_url": str(response.request.url),
+                "request_params": dict(response.request.url.params),
+                "http_status": response.status_code,
+                "content_type": content_type or None,
+                "charset": response.charset_encoding,
+                # Arrival vs. stored: httpx decompresses transport encodings, so
+                # we record what arrived but store identity bytes.
+                "content_encoding": response.headers.get("content-encoding", "identity"),
+                "stored_encoding": "identity",
+                "processor": _BRONZE_PROCESSOR,
+                "processor_version": __version__,
+            }
+            await asyncio.to_thread(
+                capture_bronze,
+                _BRONZE_SOURCE,
+                collection,
+                response.content,
+                meta,
+            )
+        except Exception as e:  # noqa: BLE001 - capture must never break processing
+            logger.warning(
+                "bronze dispatch failed",
+                collection=collection,
+                error=str(e),
+            )
+
     @retry(
         stop=stop_after_attempt(3),
         wait=_whoop_retry_wait,
@@ -172,6 +241,7 @@ class WhoopClient:
         self,
         endpoint: str,
         params: Optional[Dict[str, Any]] = None,
+        collection: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Make authenticated request to Whoop API.
@@ -181,6 +251,9 @@ class WhoopClient:
         Args:
             endpoint: API endpoint path (e.g., "/v2/activity/sleep")
             params: Query parameters
+            collection: Bronze collection name. When set (and BRONZE_ROOT is
+                configured), the raw response bytes are captured to the bronze
+                layer before processing. When None, no capture occurs.
 
         Returns:
             JSON response as dictionary
@@ -203,9 +276,24 @@ class WhoopClient:
         try:
             client = self._get_client()
             response = await client.get(url, headers=headers, params=params)
+
+            # Bronze: capture before processing. Best-effort and non-fatal.
+            # Error responses with a meaningful body are captured here as
+            # diagnostic records (with their real HTTP status) before
+            # raise_for_status() triggers the existing error handling.
+            capture = collection and is_bronze_enabled() and response.content
+            if capture and response.is_error:
+                await self._capture_bronze(response, collection)
+
             response.raise_for_status()
 
             data = response.json()
+
+            # Capture successful payloads, skipping empty pagination
+            # terminators (the "no more results" page carrying zero records),
+            # which have no functional value to reprocess.
+            if capture and not _is_empty_pagination_terminator(data):
+                await self._capture_bronze(response, collection)
 
             logger.debug(
                 "API request successful",
@@ -263,6 +351,7 @@ class WhoopClient:
         endpoint: str,
         params: Optional[Dict[str, Any]] = None,
         limit: int = 25,
+        collection: Optional[str] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         """
         Paginate through API results.
@@ -273,6 +362,8 @@ class WhoopClient:
             endpoint: API endpoint path
             params: Initial query parameters
             limit: Records per page (max 25)
+            collection: Bronze collection name passed through to each page's
+                request so every page's raw bytes are captured.
 
         Yields:
             Individual records from paginated response
@@ -290,7 +381,7 @@ class WhoopClient:
                 params["nextToken"] = next_token
 
             # Fetch page
-            response = await self._make_request(endpoint, params)
+            response = await self._make_request(endpoint, params, collection=collection)
 
             # Extract records
             records = response.get("records", [])
@@ -335,6 +426,7 @@ class WhoopClient:
             List of sleep records
         """
         endpoint = "/developer/v2/activity/sleep"
+        collection = "sleep"
         params = {}
 
         if start:
@@ -350,7 +442,7 @@ class WhoopClient:
         )
 
         records = []
-        async for record in self._paginate(endpoint, params, limit):
+        async for record in self._paginate(endpoint, params, limit, collection=collection):
             records.append(record)
 
         logger.info(
@@ -379,6 +471,7 @@ class WhoopClient:
             List of workout records
         """
         endpoint = "/developer/v2/activity/workout"
+        collection = "workout"
         params = {}
 
         if start:
@@ -394,7 +487,7 @@ class WhoopClient:
         )
 
         records = []
-        async for record in self._paginate(endpoint, params, limit):
+        async for record in self._paginate(endpoint, params, limit, collection=collection):
             records.append(record)
 
         logger.info(
@@ -423,6 +516,7 @@ class WhoopClient:
             List of recovery records
         """
         endpoint = "/developer/v2/recovery"
+        collection = "recovery"
         params = {}
 
         if start:
@@ -438,7 +532,7 @@ class WhoopClient:
         )
 
         records = []
-        async for record in self._paginate(endpoint, params, limit):
+        async for record in self._paginate(endpoint, params, limit, collection=collection):
             records.append(record)
 
         logger.info(
@@ -467,6 +561,7 @@ class WhoopClient:
             List of cycle records
         """
         endpoint = "/developer/v2/cycle"
+        collection = "cycle"
         params = {}
 
         if start:
@@ -482,7 +577,7 @@ class WhoopClient:
         )
 
         records = []
-        async for record in self._paginate(endpoint, params, limit):
+        async for record in self._paginate(endpoint, params, limit, collection=collection):
             records.append(record)
 
         logger.info(
@@ -504,7 +599,7 @@ class WhoopClient:
 
         logger.info("Fetching user profile", user_id=self.user_id)
 
-        response = await self._make_request(endpoint)
+        response = await self._make_request(endpoint, collection="profile")
 
         logger.info("Fetched user profile", user_id=self.user_id)
 
@@ -524,7 +619,7 @@ class WhoopClient:
 
         logger.info("Fetching body measurement", user_id=self.user_id)
 
-        response = await self._make_request(endpoint)
+        response = await self._make_request(endpoint, collection="body_measurement")
 
         logger.info("Fetched body measurement", user_id=self.user_id)
 

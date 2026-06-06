@@ -403,9 +403,19 @@ SYNC_INTERVAL_MINUTES=15              # How often to sync data (default: 15)
 ENVIRONMENT=development               # development or production
 MAX_REQUESTS_PER_MINUTE=60            # Whoop API rate limit (default: 60)
 
+# Bronze Layer (raw capture) — off by default
+BRONZE_ROOT=                          # Dir for raw API capture; blank = disabled. See docs/BRONZE.md
+
 # Grafana
 GRAFANA_ADMIN_USER=admin              # Grafana admin username (default: admin)
 ```
+
+> **Bronze layer:** When `BRONZE_ROOT` is set (e.g. `/data/bronze`), every raw
+> Whoop API response is captured byte-for-byte to that directory before
+> processing, alongside a `.meta.json` provenance sidecar. It is an additive,
+> best-effort side-effect — it never changes how data is parsed or stored, and a
+> failed capture never blocks a sync. Leave `BRONZE_ROOT` blank to disable.
+> See **[docs/BRONZE.md](docs/BRONZE.md)** for the full specification.
 
 #### Complete `.env` Example
 

@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import Optional
 from urllib.parse import quote_plus
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import ValidationError
@@ -75,6 +76,12 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
     db_pool_recycle_seconds: int = 1800
+
+    # Bronze layer (raw capture). When BRONZE_ROOT is unset/empty, bronze
+    # capture is a silent no-op, so existing deployments are unaffected until
+    # capture is opted into. A future change repoints this (or swaps in an S3
+    # client) without touching capture logic. Never hardcoded elsewhere.
+    bronze_root: Optional[str] = None
 
     # Security Configuration
     token_encryption_key: str  # Required: Fernet encryption key for OAuth tokens
