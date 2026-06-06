@@ -111,6 +111,10 @@ LOG_LEVEL=INFO  # Use INFO or WARNING in production
 SYNC_INTERVAL_MINUTES=15
 ENVIRONMENT=production
 
+# Bronze Layer (raw capture) — optional, off by default
+# Set to a writable directory to capture raw API responses; blank = disabled.
+BRONZE_ROOT=  # e.g. /data/bronze (see docs/BRONZE.md)
+
 # Grafana Configuration
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=<STRONG_PASSWORD_HERE>  # Generate with: openssl rand -base64 32
@@ -121,6 +125,14 @@ GRAFANA_ADMIN_PASSWORD=<STRONG_PASSWORD_HERE>  # Generate with: openssl rand -ba
 - Use strong, unique passwords (32+ characters)
 - Rotate credentials periodically
 - Consider using secrets management (AWS Secrets Manager, HashiCorp Vault)
+
+**Bronze layer (optional):** If you set `BRONZE_ROOT`, the app captures raw Whoop
+API responses to that path before processing (see
+[BRONZE.md](BRONZE.md)). It must be a **writable, persistent** location — when
+running in Docker, mount a volume at the chosen path so captures survive
+container restarts, and ensure the non-root app user can write to it. Bronze is
+append-only and grows over time; no retention/cleanup is performed yet, so size
+the volume accordingly. Leaving `BRONZE_ROOT` unset disables capture entirely.
 
 ### 3. Generate Secrets
 

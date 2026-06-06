@@ -379,6 +379,30 @@ async def _paginated_request(self, endpoint, params):
     return all_records
 ```
 
+#### Bronze Capture (src/bronze/)
+
+A best-effort, append-only capture of the **exact raw bytes** of every Whoop API
+response, written before any parsing. It is the first step toward a data-lake
+(bronze/silver/gold) processing model: bronze preserves the untouched source of
+truth so data can be reprocessed later without re-fetching from the rate-limited
+Whoop API.
+
+**Key properties:**
+- **Additive side-effect** — does not change how data is parsed, transformed, or
+  served. The existing `raw_data` JSONB column and all downstream logic are
+  unchanged.
+- **Non-fatal** — a failed bronze write is logged and swallowed; it never blocks
+  a sync.
+- **Opt-in** — disabled unless `BRONZE_ROOT` is set; then a silent no-op.
+- **Immutable** — every capture is a new, uniquely named file; nothing is ever
+  overwritten or deleted.
+
+Capture happens at the single request chokepoint (`WhoopClient._make_request`),
+so all collections and all pagination pages are covered. Each payload is written
+with a `.meta.json` provenance sidecar (status, encoding, sha256, etc.). OAuth
+token responses are deliberately **never** captured. See
+[BRONZE.md](BRONZE.md) for the full specification and on-disk layout.
+
 #### Rate Limiter (src/api/rate_limiter.py)
 
 Implements sliding window rate limiting to comply with Whoop's API limits (60 requests/minute).
@@ -676,6 +700,13 @@ class User(Base):
 3. **Debugging**: Original API response available for troubleshooting
 4. **Data Recovery**: Can re-process if schema changes
 5. **Audit Trail**: Complete record of what API returned
+
+The per-record `raw_data` JSONB column serves the *parsed, per-record* audit
+trail. The [bronze layer](BRONZE.md) complements it at a different granularity:
+it stores the *exact untouched bytes* of each full API response (including
+pagination pages and meaningful error bodies) outside the database, so the data
+can be reprocessed end-to-end without re-fetching. The two are independent and
+both additive.
 
 ### Why Incremental Sync?
 
