@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     # Rate Limiting
     max_requests_per_minute: int = 60
 
+    # Cross-process sync coordination. The poller and an occasional `docker exec`
+    # backfill run in the SAME container and both call the rate-limited Whoop
+    # API; each process has its own in-memory rate limiter, so they must not run
+    # concurrently. An advisory file lock at sync_lock_path serializes them so
+    # only one hits the API at a time (see src/utils/sync_lock.py). The poller
+    # skips its cycle if the lock is held; a backfill waits up to
+    # sync_lock_timeout_seconds for an in-flight poll to finish.
+    sync_lock_path: str = "/tmp/whoop_sync.lock"
+    sync_lock_timeout_seconds: int = 300
+
     # Database connection pool (QueuePool). Each app instance keeps its own pool
     # (no external PgBouncer). pool_pre_ping is always on so a DB restart or idle
     # timeout is recovered transparently instead of erroring mid-query. Defaults

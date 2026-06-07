@@ -101,9 +101,47 @@ Each payload is written with a sidecar carrying provenance the raw bytes don't:
 - Bronze is **append-only and immutable** — nothing is ever overwritten,
   deleted, or compacted here. Retention/cleanup is a later concern.
 
+## Backfilling gaps
+
+To "true up" missing bronze data between two dates, run the bronze backfill
+**inside the already-running container** (so it inherits the env vars and bronze
+volume mount):
+
+```bash
+docker exec <container> python -m scripts.backfill_data --start 2025-12-17
+docker exec <container> python -m scripts.backfill_data --start 2025-12-17 --end 2026-01-15
+docker exec <container> python -m scripts.backfill_data --days 30 --types sleep recovery
+```
+
+It fetches the range from the Whoop API so each raw page is captured to bronze;
+**nothing is written to the database**. Only range-based collections can be
+backfilled (`sleep`, `recovery`, `workout`, `cycle`); `profile` and
+`body_measurement` are current-snapshot endpoints with no date range. If
+`BRONZE_ROOT` is unset the command exits with an error (there would be nothing
+to write).
+
+### Staying under the API rate limit
+
+The poller and a backfill run as **separate processes** in the same container,
+each with its own in-memory rate limiter — so they must never call the Whoop API
+at the same time. They are serialized by an advisory file lock
+(`src/utils/sync_lock.py`) at `SYNC_LOCK_PATH` (default `/tmp/whoop_sync.lock`):
+
+- the backfill takes the lock (waiting up to `SYNC_LOCK_TIMEOUT_SECONDS` for any
+  in-flight poll to finish), then holds it for the whole run;
+- the poller takes the lock non-blocking and **skips that cycle** if a backfill
+  holds it, catching up on the next interval.
+
+Because only one process ever hits the API at a time, the per-process limiter is
+enough to stay under the limit. The lock is released automatically by the kernel
+if a process exits or crashes, so there is no stale lock to clean up.
+
 ## Implementation
 
 - `src/bronze/capture.py` — the writer (`capture_bronze`, atomic writes,
   sidecar, naming). Self-contained and source-agnostic.
 - `src/api/whoop_client.py` — captures at the single request chokepoint
   (`_make_request`), threading a `collection` label from each fetch method.
+- `scripts/backfill_data.py` — bronze-only, lock-serialized range backfill.
+- `src/utils/sync_lock.py` — the advisory file lock that serializes the poller
+  and backfill.
