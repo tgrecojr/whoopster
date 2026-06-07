@@ -17,6 +17,7 @@ from src.services.workout_service import WorkoutService
 from src.services.cycle_service import CycleService
 from src.services.body_measurement_service import BodyMeasurementService
 from src.utils.logging_config import get_logger
+from src.utils.sync_lock import sync_lock
 
 logger = get_logger(__name__)
 
@@ -341,9 +342,25 @@ async def sync_user_data(user_id: int) -> Dict[str, Any]:
     Returns:
         Sync results dictionary
     """
-    collector = DataCollector(user_id)
-    try:
-        return await collector.sync_all_data()
-    finally:
-        # Release pooled HTTP connections held for this sync run.
-        await collector.whoop_client.aclose()
+    # Serialize against an occasional `docker exec` backfill: both call the
+    # rate-limited Whoop API from separate processes with separate in-memory
+    # rate limiters, so they must not overlap. If a backfill holds the lock,
+    # skip this cycle rather than double up — the poller catches up next time.
+    with sync_lock(blocking=False) as acquired:
+        if not acquired:
+            logger.info(
+                "Sync lock held by another process (backfill?), skipping poll cycle",
+                user_id=user_id,
+            )
+            return {
+                "user_id": user_id,
+                "skipped": True,
+                "reason": "sync_lock_held",
+            }
+
+        collector = DataCollector(user_id)
+        try:
+            return await collector.sync_all_data()
+        finally:
+            # Release pooled HTTP connections held for this sync run.
+            await collector.whoop_client.aclose()
