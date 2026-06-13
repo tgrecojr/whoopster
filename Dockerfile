@@ -6,7 +6,7 @@
 # =============================================================================
 # Stage 1: Builder
 # =============================================================================
-FROM cgr.dev/chainguard/python:latest-dev@sha256:ddd3811dcbef56aa9f3882ae16fdc2920174ac6028c12e76cfb64c1d37b7abe2 AS builder
+FROM cgr.dev/chainguard/python:latest-dev@sha256:d45c16a1807036a402f2101a1e82863468c923d85a2ed4817b2b12b2f0ee54dd AS builder
 
 # uv ships at /usr/bin/uv in this Chainguard image; no separate copy needed.
 USER root
